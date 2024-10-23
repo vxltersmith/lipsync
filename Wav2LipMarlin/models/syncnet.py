@@ -6,7 +6,8 @@ from .conv import Conv2d
 from marlin_pytorch import Marlin
 
 class SyncNet_color(nn.Module):
-    def __init__(self, backbone = "marlin_vit_base_ytf", marlin_ckpt ='./MARLIN/ckpt/marlin_vit_base_ytf.encoder.pt'):
+    def __init__(self, backbone = "marlin_vit_base_ytf", 
+            marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt'):
         super(SyncNet_color, self).__init__()
         # changed from original
         self.face_encoder = Marlin.from_file(backbone, marlin_ckpt).encoder

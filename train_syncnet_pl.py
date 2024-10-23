@@ -1,3 +1,5 @@
+import os
+
 import torch
 from torch.utils.data import DataLoader,Subset
 
@@ -28,6 +30,7 @@ def main():
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
     parser.add_argument('--devices', help='Device ids', default=1, type=int)
     parser.add_argument('--num_workers', help='Device ids', default=None, type=int)
+    parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
 
@@ -37,23 +40,24 @@ def main():
     syncnet_T = 16
     syncnet_mel_step_size = int(16 * 3.18)
     num_workers = args.num_workers if args.num_workers is not None else hparams.num_workers
+    batch_size = args.batch_size if args.batch_size is not None else hparams.syncnet_batch_size
 
     train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
     test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size)
 
-    train_data_loader = DataLoader(train_dataset, batch_size=hparams.syncnet_batch_size, shuffle=True,
+    train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
     val_subset_size = int(0.25 * len(test_dataset))
     val_indices = torch.randperm(len(test_dataset))[:val_subset_size]
     val_subset = Subset(test_dataset, val_indices)
-    test_data_loader = DataLoader(val_subset, batch_size=hparams.syncnet_batch_size, num_workers=num_workers)
+    test_data_loader = DataLoader(val_subset, batch_size=batch_size, num_workers=num_workers)
 
     # Model
     model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.checkpoint_path)
 
     # Checkpointing
     checkpoint_callback = ModelCheckpoint(
-        dirpath=args.checkpoint_dir,
+        dirpath=os.path.join('./checkpoints', args.checkpoint_dir),
         filename='checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=3,
         monitor='train_loss',
@@ -80,7 +84,7 @@ def main():
         logger = logger,
         precision = args.precision,              # Enable FP16 mixed precision training
         callbacks = [checkpoint_callback],
-        check_val_every_n_epoch = 2 if args.limit_train_batches is None else int(1e3)  # Validation after every N epoch
+        check_val_every_n_epoch = 10 if args.limit_train_batches is None else int(1e3)  # Validation after every N epoch
     )
 
     # Training
