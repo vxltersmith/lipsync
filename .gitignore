@@ -1,0 +1,13 @@
+lightning_logs/version_4/events.out.tfevents.1729200400.20e54c00c9f4.1411914.0
+test_videos/*
+lightning_logs/*
+results/*
+__pycache__/*
+Wav2LipMarlin/datasets/__pycache__/*
+Wav2LipMarlin/__pycache__/*
+temp/*
+Wav2LipMarlin/models/__pycache__/*
+checkpoints/*
+*.png
+submodules/
+logs/
