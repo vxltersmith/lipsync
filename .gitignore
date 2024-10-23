@@ -7,5 +7,7 @@ Wav2LipMarlin/datasets/__pycache__/*
 Wav2LipMarlin/__pycache__/*
 temp/*
 Wav2LipMarlin/models/__pycache__/*
-checkpoints2/*
+checkpoints/*
 *.png
+submodules/
+logs/

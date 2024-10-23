@@ -7,8 +7,16 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from Wav2LipMarlin.hparams import hparams
 from SyncNetPLModel import LipSyncExpertModel
 from Wav2LipMarlin.datasets.dataset import Wav2LipDataset
+from pytorch_lightning.loggers import TensorBoardLogger
 
 
+
+
+# Create a TensorBoard logger
+logger = TensorBoardLogger(
+    save_dir='./logs/lightning_logs',   # Directory where logs will be saved
+    name='training',                    # Name of the experiment (log folder name)
+)
 
 def main():
     # Argument Parsing
@@ -69,6 +77,7 @@ def main():
         accelerator = accelerator,
         devices = devices,
         strategy = strategy,
+        logger = logger,
         precision = args.precision,              # Enable FP16 mixed precision training
         callbacks = [checkpoint_callback],
         check_val_every_n_epoch = 2 if args.limit_train_batches is None else int(1e3)  # Validation after every N epoch
