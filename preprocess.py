@@ -5,7 +5,7 @@ if sys.version_info[0] < 3 and sys.version_info[1] < 2:
 
 from os import listdir, path
 
-if not path.isfile('Wav2Lip/face_detection/detection/sfd/s3fd.pth'):
+if not path.isfile('checkpoints/face_detection/s3fd.pth'):
 	raise FileNotFoundError('Save the s3fd model to face_detection/detection/sfd/s3fd.pth \
 							before running this script!')
 
@@ -14,10 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse, os, traceback, subprocess
 from tqdm import tqdm
 from glob import glob
-import Wav2Lip.audio
-from Wav2Lip.hparams import hparams as hp
-
-import Wav2Lip.face_detection as face_detection
+from Wav2LipMarlin.hparams import hparams as hp
+import Wav2LipMarlin.face_detection as face_detection
 
 import cv2
 import ffmpeg
