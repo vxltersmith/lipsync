@@ -1,4 +1,5 @@
-from Wav2LipMarlin.models.syncnet import SyncNet_color as SyncNet
+from Wav2LipMarlin.models.syncnet import SyncNet_Marlin
+from Wav2LipMarlin.models.syncnet import SyncNet_color as SyncNet_Original
 from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
@@ -9,7 +10,8 @@ def _load(checkpoint_path, device):
     return checkpoint
 
 class LipSyncExpertModel(LightningModule):
-    def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, checkpoint_path=None):
+    def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, checkpoint_path=None, 
+            syncnet_type='marlin', loss_type='bce'):
         super(LipSyncExpertModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -17,9 +19,21 @@ class LipSyncExpertModel(LightningModule):
         self.checkpoint_path = checkpoint_path
         self.checkpoint = None
         
-        self.model = SyncNet()  # Original SyncNet model
-        self.loss_fn = nn.BCELoss()
-        #self.loss_fn = nn.CosineEmbeddingLoss(0.0)
+        if syncnet_type == 'marlin':
+            self.model = SyncNet_Marlin()  # Redesigned SyncNet model
+        elif syncnet_type == 'original':
+            self.model = SyncNet_Original()
+        else:
+            raise ValueError(f"Unknown model type: {syncnet_type}")
+        self.syncnet_type = syncnet_type
+        
+        if loss_type == 'bce':
+            self.loss_fn = nn.BCELoss()
+        elif loss_type == 'cosine_embedding':
+            self.loss_fn = nn.CosineEmbeddingLoss(0.0)
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
+        self.loss_type = loss_type
         
     def setup(self, stage=None):
         def load_checkpoint(path):
@@ -28,7 +42,10 @@ class LipSyncExpertModel(LightningModule):
             return checkpoint
         if self.checkpoint_path is not None:
             self.checkpoint = load_checkpoint(self.checkpoint_path)
-            self.load_state_dict(self.checkpoint["state_dict"])
+            if self.syncnet_type == "marlin":
+                self.load_state_dict(self.checkpoint["state_dict"])
+            elif self.syncnet_type == "original":
+                self.model.load_state_dict(self.checkpoint["state_dict"])
 
     def forward(self, mel, x_full):
         # Forward pass through the SyncNet model
@@ -37,29 +54,29 @@ class LipSyncExpertModel(LightningModule):
 
     def cosine_loss(self, a, v, y):
         # Cosine similarity loss
-        # y = y*2 - 1 # to labels rescale to -1:1
-        #loss = self.loss_fn(a,v,y.squeeze(-1))
-        
+        if self.loss_type == 'cosine_embedding':
+            y = y*2 - 1 # to labels rescale to -1:1
+            loss = self.loss_fn(a,v,y.squeeze(-1))
         # Original Wav2Lip-expert loss
-        d = nn.functional.cosine_similarity(a, v)
-        d = d+1/2 
-        loss = self.loss_fn(d.unsqueeze(1), y)
+        if self.loss_type == 'bce':
+            d = nn.functional.cosine_similarity(a, v)
+            d = d+1/2 
+            loss = self.loss_fn(d.unsqueeze(1), y)
         return loss
 
     def training_step(self, batch, batch_idx):
         # Training loop logic
         x, mel, y = batch
-
         # Preprocess input
-        # marlin dims (B, C, T, H, W)
+        # MARLIN dims (B, C, T, H, W)
+        # Original video input is a lower half of a face, here it's concatenated with blank other half 
+        # to match MARLIN input H,W
         x = x.reshape(x.size(0), -1, 3, x.shape[-2], x.shape[-1]).transpose(2, 1)
         x_full = torch.cat([torch.zeros_like(x), x], dim=-2)
-
-        a, v = self(mel, x_full)  # Forward pass
-
+        # Forward pass
+        a, v = self(mel, x_full)
         # Compute loss
         loss = self.cosine_loss(a, v, y)
-
         # Logging
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
@@ -85,9 +102,16 @@ class LipSyncExpertModel(LightningModule):
         x, mel, y = batch
         x = x.squeeze(0) # batch size should be 1
         mel = mel.squeeze(0) # batch size should be 1
-        # Preprocess input (B, C, T, H, W)
-        x_full = torch.cat([torch.zeros_like(x), x], dim=-2)
-        audio_embedding, video_embedding = self(mel, x_full)  # Forward pass
+
+        if self.syncnet_type == 'marlin':
+            # Preprocess input (B, C, T, H, W)
+            x_full = torch.cat([torch.zeros_like(x), x], dim=-2)
+        else:
+            # SyncNet-original input is (B, C*T, H, W)
+            x_full = x.transpose(2,1)
+            x_full = x_full.reshape(x.shape[0], -1, x.shape[-2], x.shape[-1])
+        # Forward pass
+        audio_embedding, video_embedding = self(mel, x_full)
         # Cosine similarity
         sync_scores = torch.nn.functional.cosine_similarity(video_embedding, audio_embedding, dim=-1)
         y = y * 2 -1

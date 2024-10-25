@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 # Create a TensorBoard logger
 logger = TensorBoardLogger(
-    save_dir='prediction_logs',   # Directory where logs will be saved
+    save_dir='./logs/prediction_logs',   # Directory where logs will be saved
     name='evaluation',            # Name of the experiment (log folder name)
 )
 
@@ -44,18 +44,29 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
     parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True)
-    parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', required=True, type=str)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
     parser.add_argument('--devices', help='Device ids', default=1, type=int)
+    parser.add_argument('--test_original', help='Perform testing of an original SyncNet from Wav2Lip', default=False, type=bool)
 
     args = parser.parse_args()
-    # Dataset and Dataloader setup
-    syncnet_T = 16
-    syncnet_mel_step_size = int(16 * 3.18)
+    
+    if not args.test_original:
+        # Params for Syncnet-Marlin 
+        syncnet_T = 16
+        syncnet_mel_step_size = int(16 * 3.18)
+        syncnet_type='marlin'
+    else:
+        # Params for Syncnet-orginal
+        syncnet_T = 5
+        syncnet_mel_step_size = 16
+        syncnet_type = 'original'
+        hparams.img_size = 96
+    
+    checkpoint_path = args.checkpoint_path
 
     # Initialize your model
-    model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.checkpoint_path)
+    model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, checkpoint_path, syncnet_type = syncnet_type)
     accelerator = args.accelerator
     if accelerator == 'gpu':
         import torch
@@ -76,25 +87,28 @@ def main():
         limit_predict_batches=0.01  # Run predictions on only 10% of the batches
     )
     
-    # Running unsynced test
-    predict_dataset_wrong = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, 
-        wrong_only = True)
-    # Wrap the data in a DataLoader (PyTorch Lightning requires DataLoader)
-    predict_data_loader = DataLoader(predict_dataset_wrong, batch_size=1, shuffle=False,
-                                   num_workers=hparams.num_workers)
-    # Run predictions using Trainer.predict
-    predictions = trainer.predict(model, predict_data_loader)
-    plot_binned_histogram(predictions, 'unsynced')
+    # Dataset and Dataloader setup and run prediction
     
     # Running synced test
     predict_dataset_correct = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, 
         wrong_only = False)
     # Wrap the data in a DataLoader (PyTorch Lightning requires DataLoader)
     predict_data_loader = DataLoader(predict_dataset_correct, batch_size=1, shuffle=False,
-                                   num_workers=hparams.num_workers)
+        num_workers=hparams.num_workers)
     # Run predictions using Trainer.predict
     predictions = trainer.predict(model, predict_data_loader)
     plot_binned_histogram(predictions, 'synced')
+    
+    # Running unsynced test
+    predict_dataset_wrong = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, 
+        wrong_only = True)
+    # Wrap the data in a DataLoader (PyTorch Lightning requires DataLoader)
+    predict_data_loader = DataLoader(predict_dataset_wrong, batch_size=1, shuffle=False,
+        num_workers=hparams.num_workers)
+    # Run predictions using Trainer.predict
+    predictions = trainer.predict(model, predict_data_loader)
+    plot_binned_histogram(predictions, 'unsynced')
+    
 
 if __name__ == "__main__":
     main()

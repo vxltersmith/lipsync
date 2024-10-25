@@ -118,16 +118,15 @@ class Wav2LipDataset(object):
         
 from Wav2LipMarlin.datasets.video import read_video_as_numpy
 class FullVideoSyncDataset(torch.utils.data.Dataset):
-    def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, wrong_only, offset = 16):
+    def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, 
+                wrong_only, offset = 16, rand_idx = False):
         def get_image_list(data_root, split):
             filelist = []
-
             with open('filelists/{}.txt'.format(split)) as f:
                 for line in f:
                     line = line.strip()
                     if ' ' in line: line = line.split()[0]
                     filelist.append(os.path.join(data_root, line))
-
             return filelist
         
         self.hparams = hparams
@@ -136,6 +135,8 @@ class FullVideoSyncDataset(torch.utils.data.Dataset):
         self.all_videos = get_image_list(data_root, split)
         self.wrong_only = wrong_only
         self.offset = offset
+        self.save_for_debug = False
+        self.rand_idx = rand_idx
 
     def __len__(self):
         return len(self.all_videos)
@@ -164,16 +165,21 @@ class FullVideoSyncDataset(torch.utils.data.Dataset):
         if len(window_fnames) == 0: return None
         
         return window_fnames
+    
+    def random_indx(self):
+        return random.randint(0, len(self.all_videos) - 1)
 
     def __getitem__(self, idx):
+        # to do - remove randomnes
         while 1:
-            idx = random.randint(0, len(self.all_videos) - 1)
+            if self.rand_idx:
+                idx = self.random_indx()
             vidname = self.all_videos[idx]
 
             img_names = list(glob(join(vidname, '*.jpg')))
             if len(img_names) <= self.syncnet_T:
                 continue
-            #get sorted names of files
+            # get sorted names of files
             sorted_available_ids = sorted([int(_.split('.')[0].split('/')[-1]) for _ in img_names])
             sorted_files = [str(_)+'.jpg' for _ in sorted_available_ids]
             img_names = [join(vidname, _) for _ in sorted_files]
@@ -248,5 +254,12 @@ class FullVideoSyncDataset(torch.utils.data.Dataset):
                 x = x[:mel.shape[0]]
                 #continue
             
-
+            if self.save_for_debug:
+                from Wav2LipMarlin.datasets.video import save_video_with_audio
+                video = x.transpose(2, 1)
+                video = video.reshape(-1, video.shape[2], video.shape[3], video.shape[4])
+                video = (video.permute(0, 2,3,1)*255).int()
+                audio_clip = torch.tensor(wav[:int(video.shape[0]/25*16000)])
+                save_video_with_audio(video, audio_clip, audio_sample_rate=16000)
+            
             return x, mel, y
