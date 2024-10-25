@@ -69,7 +69,7 @@ def batch_detect(net, imgs, device, norm = np.array([104, 117, 123])):
     # Disable gradient calculation (already in your code)
     with torch.no_grad():
         # Use autocast for mixed precision inference
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             olist = net(imgs)  # Inference in FP16
         # Move imgs back to CPU as soon as we're done to free GPU memory
         imgs.cpu()

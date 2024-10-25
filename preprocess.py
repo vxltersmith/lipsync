@@ -26,8 +26,9 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--ngpu', help='Number of GPUs across which to run in parallel', default=1, type=int)
 parser.add_argument('--batch_size', help='Single GPU Face detection batch size', default=32, type=int)
-parser.add_argument("--data_root", help="Root folder of the LRS2 dataset", default='/data/CelebV-HQ/')
-parser.add_argument("--preprocessed_root", help="Root folder of the preprocessed dataset", default='/data/CelebVHQ/')
+parser.add_argument("--data_root", help="Root folder of the LRS2 dataset", default=None)
+parser.add_argument("--preprocessed_root", help="Root folder of the preprocessed dataset", default=None)
+parser.add_argument("--check_before_skip", help="Check if file was already proccesed", default=False, type=bool)
 
 args = parser.parse_args()
 
@@ -111,10 +112,13 @@ def resize_img_cv2(images: Union[np.ndarray, list], target_size: Tuple[int, int]
     # Convert list of resized images to numpy array with shape (batch_size, target_height, target_width, channels)
     return np.array(resized_images)
 
-def process_video_file(vfile, args, gpu_id, check_before_skip = False, max_diff_number=10, max_frame_size = (512,512)):
+def process_video_file(vfile, args, gpu_id, check_before_skip = None, max_diff_number=0, max_frame_size = (512,512)):
     vidname = os.path.basename(vfile).split('.')[0]
     dirname = vfile.split('/')[-2]
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
+    
+    if check_before_skip is None:
+        check_before_skip = args.check_before_skip
 
     probe = ffmpeg.probe(vfile)["streams"][0]
     n_frames = int(probe["nb_frames"])
