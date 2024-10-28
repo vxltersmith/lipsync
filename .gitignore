@@ -8,5 +8,5 @@ logs/
 **.mp4
 **.wav
 **/__pycache__
-filelists/main/*
 *.txt
+filelists/main/*

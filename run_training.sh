@@ -1,0 +1,2 @@
+python train_syncnet_pl.py --data_root /data/CelebVHQ/ --checkpoint_dir no_adapter_fixed_bce_loss --num_workers 16 --batch_s
+ize 64

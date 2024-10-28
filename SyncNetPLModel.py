@@ -53,6 +53,9 @@ class LipSyncExpertModel(LightningModule):
         return a, v
 
     def cosine_loss(self, a, v, y):
+        a = a.cpu()
+        v = v.cpu()
+        y = y.cpu()
         # Cosine similarity loss
         if self.loss_type == 'cosine_embedding':
             y = y*2 - 1 # to labels rescale to -1:1
@@ -60,7 +63,7 @@ class LipSyncExpertModel(LightningModule):
         # Original Wav2Lip-expert loss
         if self.loss_type == 'bce':
             d = nn.functional.cosine_similarity(a, v)
-            d = d+1/2 
+            d = (d+1)/2 
             loss = self.loss_fn(d.unsqueeze(1), y)
         return loss
 
@@ -92,7 +95,7 @@ class LipSyncExpertModel(LightningModule):
         a, v = self(mel, x_full)  # Forward pass
 
         # Compute loss
-        loss = self.cosine_loss(a, v, y) + 0.5 * nn.functional.mse_loss(a, v)
+        loss = self.cosine_loss(a, v, y) # + 0.5 * nn.functional.mse_loss(a, v)
         # Logging
         self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss

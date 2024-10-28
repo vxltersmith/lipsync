@@ -6,13 +6,15 @@ import cv2
 import torch
 import numpy as np
 
+import torchvision.transforms as transforms
+
 
 class Wav2LipDataset(object):
-    def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size):
-        def get_image_list(data_root, split):
+    def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, manifest_root='filelists'):
+        def get_image_list(data_root, split, manifest_root):
             filelist = []
 
-            with open('filelists/{}.txt'.format(split)) as f:
+            with open(os.path.join(manifest_root, '{}.txt'.format(split))) as f:
                 for line in f:
                     line = line.strip()
                     if ' ' in line: line = line.split()[0]
@@ -23,7 +25,7 @@ class Wav2LipDataset(object):
         self.hparams = hparams
         self.syncnet_T = syncnet_T
         self.syncnet_mel_step_size = syncnet_mel_step_size
-        self.all_videos = get_image_list(data_root, split)
+        self.all_videos = get_image_list(data_root, split, manifest_root)
 
     def get_frame_id(self, frame):
         return int(basename(frame).split('.')[0])
@@ -116,6 +118,170 @@ class Wav2LipDataset(object):
 
             return x, mel, y
         
+
+class FasterWav2LipDataset(object):
+    def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, manifest_root='filelists'):
+        def get_image_list(data_root, split, manifest_root):
+            filelist = []
+            with open(os.path.join(manifest_root, '{}.txt'.format(split))) as f:
+                for line in f:
+                    line = line.strip()
+                    if ' ' in line: line = line.split()[0]
+                    filelist.append(os.path.join(data_root, line))
+            return filelist
+        
+        self.hparams = hparams
+        self.syncnet_T = syncnet_T
+        self.syncnet_mel_step_size = syncnet_mel_step_size
+        self.all_videos = get_image_list(data_root, split, manifest_root)
+        print(f"Reading dataset from manifest {split} in {manifest_root}")
+        self.read_and_map()
+    
+    def read_and_map(self):
+        import tqdm
+        all_videos = self.all_videos
+        syncnet_T = self.syncnet_T
+        
+        short_video_idx = []
+        extremelly_short_idx = []
+        long_videos_idx = []
+        medium_videos_idx = []
+        
+        def get_sorted_names(vidname, img_names):
+            # get sorted names of files
+            sorted_available_ids = sorted([int(_.split('.')[0].split('/')[-1]) for _ in img_names])
+            sorted_files = [str(_)+'.jpg' for _ in sorted_available_ids]
+            img_names = [join(vidname, _) for _ in sorted_files]
+            return img_names, sorted_available_ids
+        
+        all_videos_mapping = {}
+        for idx in tqdm.tqdm(range(len(all_videos))):
+            vidname = all_videos[idx]
+            img_names = list(glob(join(vidname, '*.jpg')))
+            
+            video_len_type = None
+            if len(img_names) < syncnet_T:
+                extremelly_short_idx.append(idx)
+                video_len_type = 'ext_short'
+                # exclude from dataset
+                continue
+            if len(img_names) <= 2 * syncnet_T:
+                short_video_idx.append(idx)
+                video_len_type = 'short' # if short replace audio
+            elif len(img_names) >= 3* syncnet_T:
+                long_videos_idx.append(idx)
+                video_len_type = 'long' # default logic
+            else:
+                medium_videos_idx.append(idx)
+                video_len_type = 'medium' # fixed offset
+            
+            sorted_img_names, sorted_available_ids = get_sorted_names(vidname, img_names)
+            all_videos_mapping[idx] = (vidname, video_len_type, sorted_img_names, sorted_available_ids)
+            continue
+        self.all_videos_mapping = all_videos_mapping
+        self.video_with_long_audios = medium_videos_idx+long_videos_idx
+
+    def get_frame_id(self, frame):
+        return int(basename(frame).split('.')[0])
+
+    def get_window(self, start_frame):
+        start_id = self.get_frame_id(start_frame)
+        vidname = dirname(start_frame)
+
+        window_fnames = []
+        for frame_id in range(start_id, start_id + self.syncnet_T):
+            frame = join(vidname, '{}.jpg'.format(frame_id))
+            if not isfile(frame):
+                return None
+            window_fnames.append(frame)
+        return window_fnames
+
+    def crop_audio_window(self, spec, start_frame):
+        # num_frames = (T x hop_size * fps) / sample_rate
+        start_frame_num = self.get_frame_id(start_frame)
+        start_idx = int(80. * (start_frame_num / float(self.hparams.fps)))
+
+        end_idx = start_idx + self.syncnet_mel_step_size
+
+        return spec[start_idx : end_idx, :]
+
+    def __len__(self):
+        return len(self.all_videos)
+
+    def __getitem__(self, idx):
+        while 1:
+            idx = random.choice(list(self.all_videos_mapping.keys()))
+            vidname, video_len_type, sorted_img_names, sorted_available_ids = self.all_videos_mapping[idx]
+
+            img_names = sorted_img_names
+
+            if random.choice([True, False]):
+                y = torch.ones(1).float() # if synced we take 0st frame
+                if video_len_type == 'medium' or video_len_type == 'long': 
+                    chosen = random.choice(img_names[:-self.syncnet_T])
+                else:
+                    chosen = img_names[0]
+                crop_from_frame = chosen
+            else:
+                y = torch.zeros(1).float()
+                crop_from_frame = img_names[0]
+                if video_len_type == 'short': # replace audio
+                    wav = None
+                    chosen = img_names[0]
+                elif video_len_type == 'medium': # fixed offset
+                    offset = self.syncnet_T // 2
+                    chosen = img_names[offset]
+                elif video_len_type == 'long':                    
+                    wrong_img_idx = random.choice(sorted_available_ids[:-self.syncnet_T])
+                    chosen = img_names[wrong_img_idx]
+
+            window_fnames = self.get_window(chosen)
+            if window_fnames is None:
+                continue
+
+            window = []
+            all_read = True
+            for fname in window_fnames:
+                img = cv2.imread(fname)
+                if img is None:
+                    all_read = False
+                    break
+                try:
+                    img = cv2.resize(img, (self.hparams.img_size, self.hparams.img_size))
+                except Exception as e:
+                    all_read = False
+                    break
+
+                window.append(img)
+
+            if not all_read: continue
+
+            # get mel for clip
+            wavpath = join(vidname, "audio.wav")
+            if y.item() == 0 and video_len_type == 'short': # need to replace audio path
+                new_audio_idx = random.choice(self.video_with_long_audios)
+                new_vidname, _,_,_ = self.all_videos_mapping[new_audio_idx]
+                wavpath = join(new_vidname, "audio.wav")   
+            
+            wav = audio.load_wav(wavpath, self.hparams.sample_rate)
+            orig_mel = audio.melspectrogram(wav, self.hparams).T
+            
+            mel = self.crop_audio_window(orig_mel.copy(), crop_from_frame)
+
+            if (mel.shape[0] != self.syncnet_mel_step_size):
+                continue
+
+            # H x W x 3 * T
+            x = np.concatenate(window, axis=2) / 255.
+            x = x.transpose(2, 0, 1)
+            x = x[:, x.shape[1]//2:]
+
+            x = torch.FloatTensor(x)
+            mel = torch.FloatTensor(mel.T).unsqueeze(0)
+
+            return x, mel, y
+
+
 class FullVideoSyncDataset(torch.utils.data.Dataset):
     def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, 
                 wrong_only, offset = 16, rand_idx = False):
