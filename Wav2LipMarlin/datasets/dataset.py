@@ -116,7 +116,6 @@ class Wav2LipDataset(object):
 
             return x, mel, y
         
-from Wav2LipMarlin.datasets.video import read_video_as_numpy
 class FullVideoSyncDataset(torch.utils.data.Dataset):
     def __init__(self, data_root, split, hparams, syncnet_T, syncnet_mel_step_size, 
                 wrong_only, offset = 16, rand_idx = False):
@@ -133,6 +132,7 @@ class FullVideoSyncDataset(torch.utils.data.Dataset):
         self.syncnet_T = syncnet_T
         self.syncnet_mel_step_size = syncnet_mel_step_size
         self.all_videos = get_image_list(data_root, split)
+        self.data_root = data_root
         self.wrong_only = wrong_only
         self.offset = offset
         self.save_for_debug = False
@@ -168,98 +168,95 @@ class FullVideoSyncDataset(torch.utils.data.Dataset):
     
     def random_indx(self):
         return random.randint(0, len(self.all_videos) - 1)
+    
+    def empty_output(self):
+        return torch.zeros(1,1,1), torch.zeros(1,1,1), torch.zeros(1)
 
     def __getitem__(self, idx):
         # to do - remove randomnes
-        while 1:
-            if self.rand_idx:
-                idx = self.random_indx()
-            vidname = self.all_videos[idx]
+        vidname = self.all_videos[idx]
 
-            img_names = list(glob(join(vidname, '*.jpg')))
-            if len(img_names) <= self.syncnet_T:
-                continue
-            # get sorted names of files
-            sorted_available_ids = sorted([int(_.split('.')[0].split('/')[-1]) for _ in img_names])
-            sorted_files = [str(_)+'.jpg' for _ in sorted_available_ids]
-            img_names = [join(vidname, _) for _ in sorted_files]
+        img_names = list(glob(join(vidname, '*.jpg')))
+        if len(img_names) <= self.syncnet_T:
+            return self.empty_output()
+        # get sorted names of files
+        sorted_available_ids = sorted([int(_.split('.')[0].split('/')[-1]) for _ in img_names])
+        sorted_files = [str(_)+'.jpg' for _ in sorted_available_ids]
+        img_names = [join(vidname, _) for _ in sorted_files]
 
-            img_name = img_names[0]
-            last_frame_id = sorted_available_ids[-1]
+        img_name = img_names[0]
+        last_frame_id = sorted_available_ids[-1]
+        
+        if not self.wrong_only:
+            y = torch.ones(1).float()
+            window_fnames = self.get_window(img_name, last_frame_id)
+        else:
+            y = torch.zeros(1).float()
+            wrong_img_name = img_names[self.offset]
+            window_fnames = self.get_window(wrong_img_name, last_frame_id)
             
-            if not self.wrong_only:
-                y = torch.ones(1).float()
-                window_fnames = self.get_window(img_name, last_frame_id)
-            else:
-                y = torch.zeros(1).float()
-                wrong_img_name = img_names[self.offset]
-                window_fnames = self.get_window(wrong_img_name, last_frame_id)
-                
-            if window_fnames is None:
-                continue
-                
-            window = []
-            all_read = True
-            for fname in window_fnames:
-                img = cv2.imread(fname)
-                if img is None:
-                    all_read = False
-                    break
-                try:
-                    img = cv2.resize(img, (self.hparams.img_size, self.hparams.img_size))
-                except Exception as e:
-                    all_read = False
-                    break
-                window.append(img)
+        if window_fnames is None:
+            return self.empty_output()
+            
+        window = []
+        all_read = True
+        for fname in window_fnames:
+            img = cv2.imread(fname)
+            if img is None:
+                all_read = False
+                break
+            try:
+                img = cv2.resize(img, (self.hparams.img_size, self.hparams.img_size))
+            except Exception as e:
+                all_read = False
+                break
+            window.append(img)
 
-            if not all_read: continue
-            
-            #try:
-            wavpath = join(vidname, "audio.wav")
-            wav = audio.load_wav(wavpath, self.hparams.sample_rate)
-            orig_mel = audio.melspectrogram(wav, self.hparams).T
-            #except Exception as e:
-            #    continue
-            if self.wrong_only:
-                mel = self.crop_audio_window(orig_mel.copy(), img_name)
-                # if (mel.shape[0] != self.syncnet_mel_step_size):
-                #     continue
-            else:
-                mel = orig_mel
-            
-            # H x W x 3 * T
-            x = np.concatenate(window, axis=2) / 255.
-            x = x.transpose(2, 0, 1)
-            x = x[:, x.shape[1]//2:]
-            
-            # form a bacth
-            #x = np.stack(window, axis=0)
-            x = x[:(x.shape[0]//3//self.syncnet_T * self.syncnet_T) * 3,:,:]
-            x = x.reshape(-1, self.syncnet_T, 3, x.shape[-2], x.shape[-1])
-            # reshape to (B, C, T, H, W)
-            x = x.transpose(0,2,1,3,4)
-            
-            mel = mel[:(mel.shape[0]//self.syncnet_mel_step_size) * self.syncnet_mel_step_size,:]
-            mel = mel.reshape(-1, self.syncnet_mel_step_size, mel.shape[-1])
-            mel = mel[:x.shape[0], :, :]
-            mel = mel.transpose(0, 2, 1)
+        if not all_read: 
+            return self.empty_output()
+        
+        wavpath = join(vidname, "audio.wav")
+        wav = audio.load_wav(wavpath, self.hparams.sample_rate)
+        orig_mel = audio.melspectrogram(wav, self.hparams).T
 
-            x = torch.FloatTensor(x)
-            mel = torch.FloatTensor(mel).unsqueeze(1) # should be B, 1, 80, T
-            
-            if x.shape[0] == 0:
-                continue
-            
-            if x.shape[0] > mel.shape[0]:
-                x = x[:mel.shape[0]]
-                #continue
-            
-            if self.save_for_debug:
-                from Wav2LipMarlin.datasets.video import save_video_with_audio
-                video = x.transpose(2, 1)
-                video = video.reshape(-1, video.shape[2], video.shape[3], video.shape[4])
-                video = (video.permute(0, 2,3,1)*255).int()
-                audio_clip = torch.tensor(wav[:int(video.shape[0]/25*16000)])
-                save_video_with_audio(video, audio_clip, audio_sample_rate=16000)
-            
-            return x, mel, y
+        if self.wrong_only:
+            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            # if (mel.shape[0] != self.syncnet_mel_step_size):
+            #     continue
+        else:
+            mel = orig_mel
+        
+        # H x W x 3 * T
+        x = np.concatenate(window, axis=2) / 255.
+        x = x.transpose(2, 0, 1)
+        x = x[:, x.shape[1]//2:]
+        
+        # form a bacth
+        x = x[:(x.shape[0]//3//self.syncnet_T * self.syncnet_T) * 3,:,:]
+        x = x.reshape(-1, self.syncnet_T, 3, x.shape[-2], x.shape[-1])
+        # reshape to (B, C, T, H, W)
+        x = x.transpose(0,2,1,3,4)
+        
+        mel = mel[:(mel.shape[0]//self.syncnet_mel_step_size) * self.syncnet_mel_step_size,:]
+        mel = mel.reshape(-1, self.syncnet_mel_step_size, mel.shape[-1])
+        mel = mel[:x.shape[0], :, :]
+        mel = mel.transpose(0, 2, 1)
+
+        x = torch.FloatTensor(x)
+        mel = torch.FloatTensor(mel).unsqueeze(1) # should be B, 1, 80, T
+        
+        if x.shape[0] == 0:
+            return self.empty_output()
+        
+        if x.shape[0] > mel.shape[0]:
+            x = x[:mel.shape[0]]
+        
+        if self.save_for_debug:
+            from Wav2LipMarlin.datasets.video import save_video_with_audio
+            video = x.transpose(2, 1)
+            video = video.reshape(-1, video.shape[2], video.shape[3], video.shape[4])
+            video = (video.permute(0, 2,3,1)*255).int()
+            audio_clip = torch.tensor(wav[:int(video.shape[0]/25*16000)])
+            save_video_with_audio(video, audio_clip, audio_sample_rate=16000)
+        
+        return x, mel, y

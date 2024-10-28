@@ -102,6 +102,9 @@ class LipSyncExpertModel(LightningModule):
         x, mel, y = batch
         x = x.squeeze(0) # batch size should be 1
         mel = mel.squeeze(0) # batch size should be 1
+        
+        if len(x.shape) == len(mel.shape) and x.shape[-1] == mel.shape[-1]:
+            return None
 
         if self.syncnet_type == 'marlin':
             # Preprocess input (B, C, T, H, W)
@@ -134,5 +137,14 @@ class LipSyncExpertModel(LightningModule):
             return optimizer
         if self.checkpoint is not None:
             optimizer = load_checkpoint(self.checkpoint, optimizer)
-        return optimizer
+        
+        from torch.optim.lr_scheduler import CosineAnnealingLR
+        scheduler = CosineAnnealingLR(optimizer, 1e5, 1e-6)  # Decays learning rate every 10 epochs by a factor of 0.1
+
+        # Step 3: Return a dictionary with optimizer and scheduler
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': scheduler,
+            'monitor': 'val_loss'  # Optional: monitor metric to decide when to update scheduler in some cases
+        }
 

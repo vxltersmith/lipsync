@@ -42,7 +42,7 @@ def plot_binned_histogram(scores, experiment_name = 'unsynced'):
 def main():
     # Argument Parsing
     import argparse
-    parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
+    parser = argparse.ArgumentParser(description='Run evaluation of SyncNet on dataset')
     parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
@@ -84,7 +84,7 @@ def main():
         strategy = strategy,
         precision = '16-mixed',
         logger = logger,
-        limit_predict_batches=0.01  # Run predictions on only 10% of the batches
+        limit_predict_batches=0.5  # Run predictions on only 10% of the batches
     )
     
     # Dataset and Dataloader setup and run prediction

@@ -81,6 +81,7 @@ def main():
         accelerator = accelerator,
         devices = devices,
         strategy = strategy,
+        log_every_n_steps=4,
         logger = logger,
         precision = args.precision,              # Enable FP16 mixed precision training
         callbacks = [checkpoint_callback],
