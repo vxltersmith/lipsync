@@ -8,3 +8,4 @@ logs/
 **.mp4
 **.wav
 **/__pycache__
+*.txt

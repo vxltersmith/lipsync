@@ -15,7 +15,7 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./debug_checkpoints/", "--limit_train_batches", "1"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "True", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
             //"args": ["--data_root", "/data/CelebV-HQ/"]
-            "args": ["--data_root", "/data/LRS2/mvlrs_v1/main/"]
+            "args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "./lrs_try_v0/", "--num_workers", "32"]
             //, "--checkpoint_path", "./checkpoints/cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./checkpoints2/", "--checkpoint_path", "./cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"]
         }
