@@ -6,9 +6,9 @@ import numpy as np
 import os
 
 import torch
-import Wav2Lip.face_detection as face_detection
-import Wav2Lip.audio as audio
-from Wav2Lip.models import Wav2Lip
+import Wav2LipMarlin.face_detection as face_detection
+import Wav2LipMarlin.datasets.audio as audio
+from Wav2LipMarlin.models import Wav2Lip
 import platform
 
 

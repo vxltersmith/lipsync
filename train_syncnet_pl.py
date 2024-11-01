@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from Wav2LipMarlin.hparams import hparams
 from SyncNetPLModel import LipSyncExpertModel
-from Wav2LipMarlin.datasets.dataset import FasterWav2LipDataset, FullVideoSyncDataset
+from Wav2LipMarlin.datasets.dataset import Wav2LipSyncNetDataset, FullVideoSyncDataset
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from pytorch_lightning import seed_everything
@@ -18,7 +18,7 @@ from pytorch_lightning import seed_everything
 # Create a TensorBoard logger
 logger = TensorBoardLogger(
     save_dir='./logs/lightning_logs',   # Directory where logs will be saved
-    name='training',                    # Name of the experiment (log folder name)
+    name='syncnet_training',                    # Name of the experiment (log folder name)
 )
 
 def main():
@@ -51,7 +51,7 @@ def main():
     if args.seed != -1:
         seed_everything(args.seed, workers = True) # Seed everything including workers
 
-    train_dataset = FasterWav2LipDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
+    train_dataset = Wav2LipSyncNetDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
     test_dataset = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, wrong_only = False)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
