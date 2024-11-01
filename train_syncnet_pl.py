@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from Wav2LipMarlin.hparams import hparams
 from SyncNetPLModel import LipSyncExpertModel
-from Wav2LipMarlin.datasets.dataset import FasterWav2LipDataset
+from Wav2LipMarlin.datasets.dataset import FasterWav2LipDataset, FullVideoSyncDataset
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from pytorch_lightning import seed_everything
@@ -52,14 +52,14 @@ def main():
         seed_everything(args.seed, workers = True) # Seed everything including workers
 
     train_dataset = FasterWav2LipDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
-    test_dataset = FasterWav2LipDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size)
+    test_dataset = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, wrong_only = False)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
     val_subset_size = int(limit_val_batches * len(test_dataset))
     val_indices = torch.randperm(len(test_dataset))[:val_subset_size]
     val_subset = Subset(test_dataset, val_indices)
-    test_data_loader = DataLoader(val_subset, batch_size=batch_size, num_workers=num_workers)
+    test_data_loader = DataLoader(val_subset, batch_size=1, num_workers=num_workers, shuffle=False)
 
     # Model
     model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.checkpoint_path)

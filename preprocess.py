@@ -1,13 +1,13 @@
 import sys
 
 if sys.version_info[0] < 3 and sys.version_info[1] < 2:
-	raise Exception("Must be using >= Python 3.2")
+    raise Exception("Must be using >= Python 3.2")
 
 from os import listdir, path
 
 if not path.isfile('checkpoints/face_detection/s3fd.pth'):
-	raise FileNotFoundError('Save the s3fd model to face_detection/detection/sfd/s3fd.pth \
-							before running this script!')
+    raise FileNotFoundError('Save the s3fd model to face_detection/detection/sfd/s3fd.pth \
+                            before running this script!')
 
 import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,7 +33,7 @@ parser.add_argument("--check_before_skip", help="Check if file was already procc
 args = parser.parse_args()
 
 fa = [face_detection.FaceAlignment(face_detection.LandmarksType._2D, flip_input=False, 
-									device='cuda:{}'.format(id)) for id in range(args.ngpu)]
+                                    device='cuda:{}'.format(id)) for id in range(args.ngpu)]
 
 template = 'ffmpeg -loglevel panic -y -i {} -strict -2 {}'
 # template2 = 'ffmpeg -hide_banner -loglevel panic -threads 1 -y -i {} -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 {}'
@@ -112,7 +112,7 @@ def resize_img_cv2(images: Union[np.ndarray, list], target_size: Tuple[int, int]
     # Convert list of resized images to numpy array with shape (batch_size, target_height, target_width, channels)
     return np.array(resized_images)
 
-def process_video_file(vfile, args, gpu_id, check_before_skip = None, max_diff_number=0, max_frame_size = (512,512)):
+def process_video_file(vfile, args, gpu_id, check_before_skip = None, max_diff_number=0, max_frame_size = (224,224)):
     vidname = os.path.basename(vfile).split('.')[0]
     dirname = vfile.split('/')[-2]
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
@@ -132,7 +132,7 @@ def process_video_file(vfile, args, gpu_id, check_before_skip = None, max_diff_n
             return
     
     video_stream = cv2.VideoCapture(vfile)
-	
+    
     frames = []
     while 1:
         still_reading, frame = video_stream.read()
@@ -162,18 +162,18 @@ def process_video_file(vfile, args, gpu_id, check_before_skip = None, max_diff_n
     return
 
 def process_audio_file(vfile, args):
-	vidname = os.path.basename(vfile).split('.')[0]
-	dirname = vfile.split('/')[-2]
+    vidname = os.path.basename(vfile).split('.')[0]
+    dirname = vfile.split('/')[-2]
 
-	fulldir = path.join(args.preprocessed_root, dirname, vidname)
-	os.makedirs(fulldir, exist_ok=True)
+    fulldir = path.join(args.preprocessed_root, dirname, vidname)
+    os.makedirs(fulldir, exist_ok=True)
 
-	wavpath = path.join(fulldir, 'audio.wav')
+    wavpath = path.join(fulldir, 'audio.wav')
 
-	command = template.format(vfile, wavpath)
-	subprocess.call(command, shell=True)
+    command = template.format(vfile, wavpath)
+    subprocess.call(command, shell=True)
 
-	
+    
 def mp_handler(job):
     vfile, args, gpu_id = job
     #process_video_file(vfile, args, gpu_id)
@@ -183,27 +183,29 @@ def mp_handler(job):
         exit(0)
     except:
         traceback.print_exc()
-		
+        
 def main(args):
-	print('Started processing for {} with {} GPUs'.format(args.data_root, args.ngpu))
+    print('Started processing for {} with {} GPUs'.format(args.data_root, args.ngpu))
 
-	filelist = glob(path.join(args.data_root, '*/*.mp4'))
+    filelist = glob(path.join(args.data_root, '*/*.mp4'))
+    if len(filelist) == 0:
+        filelist = glob(path.join(args.data_root, '**', '*.mp4'), recursive=True)
 
-	jobs = [(vfile, args, i%args.ngpu) for i, vfile in enumerate(filelist)]
-	p = ThreadPoolExecutor(args.ngpu)
-	futures = [p.submit(mp_handler, j) for j in jobs]
-	_ = [r.result() for r in tqdm(as_completed(futures), total=len(futures))]
+    jobs = [(vfile, args, i%args.ngpu) for i, vfile in enumerate(filelist)]
+    p = ThreadPoolExecutor(args.ngpu)
+    futures = [p.submit(mp_handler, j) for j in jobs]
+    _ = [r.result() for r in tqdm(as_completed(futures), total=len(futures))]
 
-	print('Dumping audios...')
+    print('Dumping audios...')
 
-	for vfile in tqdm(filelist):
-		try:
-			process_audio_file(vfile, args)
-		except KeyboardInterrupt:
-			exit(0)
-		except:
-			traceback.print_exc()
-			continue
+    for vfile in tqdm(filelist):
+        try:
+            process_audio_file(vfile, args)
+        except KeyboardInterrupt:
+            exit(0)
+        except:
+            traceback.print_exc()
+            continue
 
 if __name__ == '__main__':
-	main(args)
+    main(args)

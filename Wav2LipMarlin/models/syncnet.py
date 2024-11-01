@@ -7,19 +7,17 @@ from marlin_pytorch import Marlin
 
 class SyncNet_Marlin(nn.Module):
     def __init__(self, backbone = "marlin_vit_base_ytf", 
-            marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt'):
+            marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt', 
+            marlin_out_dim=768, external_pooler = True):
         super(SyncNet_Marlin, self).__init__()
         # changed from original
         self.face_encoder = Marlin.from_file(backbone, marlin_ckpt).encoder
         for p in self.face_encoder.parameters():
             p.requires_grad = False
         
-        # self.face_post_encoder = nn.Sequential(
-        #     nn.Linear(768, 768),
-        #     nn.ReLU(),
-        #     nn.Linear(768, 512),
-        #     nn.ReLU()
-        # )
+        self.external_pooler = external_pooler
+        if external_pooler:
+            self.pooler = ExternalAttentionPooler(marlin_out_dim, 512)
 
         self.audio_encoder = nn.Sequential(
             Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
@@ -49,8 +47,10 @@ class SyncNet_Marlin(nn.Module):
 
     def forward(self, audio_sequences, face_sequences): # audio_sequences := (B, dim, T)
         with torch.no_grad():
-            face_embedding = self.face_encoder.extract_features(face_sequences, True)
-        #face_embedding = self.face_post_encoder(face_embedding)
+            face_embedding = self.face_encoder.extract_features(face_sequences, not self.external_pooler)
+        if self.external_pooler:
+            face_embedding =  self.pooler(face_embedding)
+        
         face_embedding = F.normalize(face_embedding, p=2, dim=1)
             
         audio_embedding = self.audio_encoder(audio_sequences)
@@ -119,3 +119,26 @@ class SyncNet_color(nn.Module):
 
 
         return audio_embedding, face_embedding
+    
+    
+class ExternalAttentionPooler(nn.Module):
+    def __init__(self, input_dim, attention_dim=128):
+        super(ExternalAttentionPooler, self).__init__()
+        # Attention mechanism
+        self.attention = nn.Sequential(
+            nn.Linear(input_dim, attention_dim),
+            nn.ReLU(),
+            nn.Linear(attention_dim, 1)
+        )
+
+    def forward(self, vit_features):
+        # vit_features shape: (B, T, D)
+        
+        # Calculate attention weights
+        attention_weights = self.attention(vit_features)  # Shape: (B, T, 1)
+        attention_weights = F.softmax(attention_weights, dim=1)  # Normalize along T dimension
+
+        # Weighted sum pooling
+        pooled_features = (vit_features * attention_weights).sum(dim=1)  # Shape: (B, D)
+        
+        return pooled_features

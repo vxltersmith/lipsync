@@ -87,17 +87,34 @@ class LipSyncExpertModel(LightningModule):
     def validation_step(self, batch, batch_idx):
         # Validation loop logic
         x, mel, y = batch
+        x = x.squeeze(0) # batch size should be 1
+        mel = mel.squeeze(0) # batch size should be 1
+        
+        if len(x.shape) == len(mel.shape) and x.shape[-1] == mel.shape[-1]:
+            print('Runs on entire video only!')
+            return None
 
-        # Preprocess input
-        x = x.reshape(x.size(0), -1, 3, x.shape[-2], x.shape[-1]).transpose(2, 1)
-        x_full = torch.cat([torch.zeros_like(x), x], dim=-2)
-
-        a, v = self(mel, x_full)  # Forward pass
+        if self.syncnet_type == 'marlin':
+            # Preprocess input (B, C, T, H, W)
+            x_full = torch.cat([torch.zeros_like(x), x], dim=-2)
+        else:
+            # SyncNet-original input is (B, C*T, H, W)
+            x_full = x.transpose(2,1)
+            x_full = x_full.reshape(x.shape[0], -1, x.shape[-2], x.shape[-1])
+        # Forward pass
+        audio_embedding, video_embedding = self(mel, x_full)
 
         # Compute loss
-        loss = self.cosine_loss(a, v, y) # + 0.5 * nn.functional.mse_loss(a, v)
-        # Logging
+        y = y.repeat(audio_embedding.size(0), 1)
+        loss = self.cosine_loss(audio_embedding, video_embedding, y)
+        
+        # Cosine similarity
+        sync_scores = torch.nn.functional.cosine_similarity(video_embedding, audio_embedding, dim=-1)
+        sync_scores_norm = (sync_scores + 1) / 2
+        sync_scores_norm = sync_scores_norm.mean().item()
+        
         self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('val_pos_sync_scores', sync_scores_norm, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
     
     def predict_step(self, batch, batch_idx):
@@ -107,6 +124,7 @@ class LipSyncExpertModel(LightningModule):
         mel = mel.squeeze(0) # batch size should be 1
         
         if len(x.shape) == len(mel.shape) and x.shape[-1] == mel.shape[-1]:
+            print('Runs on entire video only!')
             return None
 
         if self.syncnet_type == 'marlin':
@@ -142,7 +160,7 @@ class LipSyncExpertModel(LightningModule):
             optimizer = load_checkpoint(self.checkpoint, optimizer)
         
         from torch.optim.lr_scheduler import CosineAnnealingLR
-        scheduler = CosineAnnealingLR(optimizer, 1e5, 1e-6)  # Decays learning rate every 10 epochs by a factor of 0.1
+        scheduler = CosineAnnealingLR(optimizer, 1e8, 1e-10)
 
         # Step 3: Return a dictionary with optimizer and scheduler
         return {
