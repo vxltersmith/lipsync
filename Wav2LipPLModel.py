@@ -4,7 +4,6 @@ from Wav2LipMarlin.utils import save_sample_images
 from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
-import numpy as np
 
 
 
@@ -14,27 +13,29 @@ def _load(checkpoint_path, device):
     return checkpoint
 
 class Wav2LipModel(LightningModule):
-    def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_model, checkpoint_path=None, checkpoint_dir='./samples',
+    def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
             wav2lip_type='marlin', loss_type='bce'):
         super(Wav2LipModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
         self.syncnet_mel_step_size = syncnet_mel_step_size
         self.checkpoint_path = checkpoint_path
-        self.syncnet_model = syncnet_model
+        
+        assert syncnet_pl_model is not None # it's important to have it
+        self.syncnet_pl_model = syncnet_pl_model
+        for p in syncnet_pl_model.model.parameters(): # Excluding syncnet weights from autograd
+            p.requires_grad = False
+        
         self.checkpoint = None
-        self.checkpoint_dir = checkpoint_dir
+        self.samples_dir = samples_dir
                
         if wav2lip_type == 'marlin':
-            self.syncnet = Wav2Lip_Marlin()  # Redesigned SyncNet model
+            self.model = Wav2Lip_Marlin()  # Redesigned Wav2Lip model with MARLIN encoder
         elif wav2lip_type == 'original':
-            self.syncnet = Wav2Lip_Original()
+            self.model = Wav2Lip_Original()
         else:
             raise ValueError(f"Unknown model type: {wav2lip_type}")
         self.wav2lip_type = wav2lip_type
-        
-        for p in self.syncnet.parameters():
-            p.requires_grad = False
         
         if loss_type == 'bce':
             self.loss_fn = nn.BCELoss()
@@ -51,10 +52,12 @@ class Wav2LipModel(LightningModule):
             return checkpoint
         if self.checkpoint_path is not None:
             self.checkpoint = load_checkpoint(self.checkpoint_path)
-            if self.syncnet_type == "marlin":
+            if self.wav2lip_type == "marlin":
                 self.load_state_dict(self.checkpoint["state_dict"])
-            elif self.syncnet_type == "original":
+            elif self.wav2lip_type == "original":
                 self.model.load_state_dict(self.checkpoint["state_dict"])
+            else:
+                raise NotImplementedError()
                 
         self.logloss = nn.BCELoss()
         self.recon_loss = nn.L1Loss()
@@ -72,8 +75,10 @@ class Wav2LipModel(LightningModule):
     def get_sync_loss(self, mel, g):
         g = g[:, :, :, g.size(3)//2:]
         g = torch.cat([g[:, :, i] for i in range(self.syncnet_T)], dim=1)
+        
         # B, 3 * T, H//2, W
         a, v = self.syncnet_model(mel, g)
+        
         y = torch.ones(g.size(0), 1).float().to(self.device)
         return self.cosine_loss(a, v, y)
 
@@ -97,7 +102,7 @@ class Wav2LipModel(LightningModule):
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
 
         if self.global_step % self.hparams.checkpoint_interval == 0:
-            save_sample_images(x, g, gt, self.global_step, self.checkpoint_dir)
+            save_sample_images(x, g, gt, self.global_step, self.samples_dir)
 
         if self.hparams.syncnet_wt > 0.:
             running_sync_loss += sync_loss.item()
@@ -143,7 +148,7 @@ class Wav2LipModel(LightningModule):
     def configure_optimizers(self):
         # Optimizer configuration
         optimizer = optim.Adam([p for p in self.model.parameters() if p.requires_grad],
-                               lr=self.config.syncnet_lr)
+                               lr=self.config.initial_learning_rate)
         
         def load_checkpoint(checkpoint, optimizer, reset_optimizer = False):
             if not reset_optimizer:
@@ -152,15 +157,19 @@ class Wav2LipModel(LightningModule):
                     print("Load optimizer state from state dict")
                     optimizer.load_state_dict(optimizer_state)
             return optimizer
+        
         if self.checkpoint is not None:
             optimizer = load_checkpoint(self.checkpoint, optimizer)
         
-        from torch.optim.lr_scheduler import CosineAnnealingLR
-        scheduler = CosineAnnealingLR(optimizer, 1e8, 1e-10)
+        if self.scheduler:
+            from torch.optim.lr_scheduler import CosineAnnealingLR
+            scheduler = CosineAnnealingLR(optimizer, 1e8, 1e-10)
 
-        # Step 3: Return a dictionary with optimizer and scheduler
-        return {
-            'optimizer': optimizer,
-            'lr_scheduler': scheduler,
-            'monitor': 'val_loss'  # Optional: monitor metric to decide when to update scheduler in some cases
-        }
+            # Step 3: Return a dictionary with optimizer and scheduler
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': scheduler,
+                'monitor': 'val_loss'  # Optional: monitor metric to decide when to update scheduler in some cases
+            }
+        
+        return optimizer

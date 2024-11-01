@@ -8,7 +8,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from Wav2LipMarlin.hparams import hparams
 from Wav2LipPLModel import Wav2LipModel
-from Wav2LipMarlin.datasets.dataset import Wav2LipDataset, FullVideoSyncDataset
+from SyncNetPLModel import LipSyncExpertModel
+from Wav2LipMarlin.datasets.dataset import Wav2LipDataset
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from pytorch_lightning import seed_everything
@@ -27,6 +28,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
     parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True)
     parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', required=True, type=str)
+    parser.add_argument('--syncnet_checkpoint_path', help='pre-trained LipSync expert checkpoint; required for training', required=True, type=str)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
     parser.add_argument('--devices', help='Device ids', default=1, type=int)
@@ -36,7 +38,8 @@ def main():
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
-    parser.add_argument('--orig_sync', help='Use original syncnet or MARLIN-based', default=True, type=bool)
+    parser.add_argument('--wav2lip_type', help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
+            default="marlin", type=str)
     
 
     args = parser.parse_args()
@@ -53,20 +56,41 @@ def main():
     if args.seed != -1:
         seed_everything(args.seed, workers = True) # Seed everything including workers
         
-    if not args.orig_sync:
-        # Params for Syncnet-Marlin
+    if args.wav2lip_type == 'marlin_full':
+        # Params for Syncnet-Marlin and Wav2Lip-Marlin
         syncnet_T = 5
-        syncnet_T_m = int(3.2 * syncnet_T_m)
+        syncnet_T_m = int(3.2 * syncnet_T)
+        
         syncnet_mel_step_size = 16
         syncnet_mel_step_size_m = int(syncnet_mel_step_size * 3.18)
-        syncnet_type='marlin'
+
+        # both are MARLIN-based
+        syncnet_mel_step_size = syncnet_mel_step_size_m
+        syncnet_T = syncnet_T_m
+        
+        wav2lip_type='marlin_full'
         hparams.img_size = 224
-    else:
-        # Params for Syncnet-orginal
+    elif args.wav2lip_type == 'original':
+        # Params for Syncnet-orginal and Wav2Lip-original
+        syncnet_T = 5
+        syncnet_T_m = syncnet_T
+        
+        syncnet_mel_step_size = 16
+        syncnet_mel_step_size_m = syncnet_mel_step_size
+        
+        wav2lip_type = 'original'
+        hparams.img_size = 96
+    elif args.wav2lip_type == 'marlin':
+        # Params for Syncnet-orginal and Wav2Lip-Marlin
         syncnet_T = 5
         syncnet_mel_step_size = 16
-        syncnet_type = 'original'
-        hparams.img_size = 96
+        
+        syncnet_T_m = int(3.2 * syncnet_T)       
+        syncnet_mel_step_size_m = int(syncnet_mel_step_size * 3.18)
+        
+        wav2lip_type = 'original'
+        hparams.img_size = 96    
+    
 
     train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
     test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, wrong_only = False)
@@ -78,12 +102,14 @@ def main():
     val_subset = Subset(test_dataset, val_indices)
     test_data_loader = DataLoader(val_subset, batch_size=1, num_workers=num_workers, shuffle=False)
 
+    # LipSync-expert model
+    syncnet_pl_model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.syncnet_checkpoint_path)
     # Model
-    model = Wav2LipModel(hparams, syncnet_T, syncnet_mel_step_size, args.checkpoint_path)
+    model = Wav2LipModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, wav2lip_type=wav2lip_type)
 
     # Checkpointing
     checkpoint_callback = ModelCheckpoint(
-        dirpath=os.path.join('./checkpoints', args.checkpoint_dir),
+        dirpath=os.path.join('./checkpoints/wav2lip/', args.checkpoint_dir),
         filename='checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
         monitor='train_loss',
