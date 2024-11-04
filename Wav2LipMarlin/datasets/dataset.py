@@ -17,6 +17,7 @@ class Wav2LipDataset(object):
         hparams,
         syncnet_T,
         syncnet_mel_step_size,
+        syncnet_T_orig=5,
         manifest_root="filelists",
     ):
         def get_image_list(data_root, split, manifest_root):
@@ -31,6 +32,8 @@ class Wav2LipDataset(object):
 
         self.hparams = hparams
         self.syncnet_T = syncnet_T
+        self.syncnet_T_orig = syncnet_T_orig
+        self.max_multiplier = {5: 3, 16: 2}
         self.syncnet_mel_step_size = syncnet_mel_step_size
         self.all_videos = get_image_list(data_root, split, manifest_root)
 
@@ -78,7 +81,7 @@ class Wav2LipDataset(object):
 
     def get_segmented_mels(self, spec, start_frame):
         mels = []
-        assert self.syncnet_T == 5
+        assert self.syncnet_T == 5 or self.syncnet_T == 16 
         start_frame_num = self.get_frame_id(start_frame) + 1 # 0-indexing ---> 1-indexing
         if start_frame_num - 2 < 0: return None
         for i in range(start_frame_num, start_frame_num + self.syncnet_T):
@@ -88,8 +91,7 @@ class Wav2LipDataset(object):
             mels.append(m.T)
 
         mels = np.asarray(mels)
-
-        return mels
+        return mels # Frames, n_mels, T
 
     def prepare_window(self, window):
         # 3 x T x H x W
@@ -106,7 +108,7 @@ class Wav2LipDataset(object):
             idx = random.randint(0, len(self.all_videos) - 1)
             vidname = self.all_videos[idx]
             img_names = list(glob(join(vidname, '*.jpg')))
-            if len(img_names) <= 3 * self.syncnet_T:
+            if len(img_names) <= self.max_multiplier[self.syncnet_T] * self.syncnet_T:
                 continue
             
             img_name = random.choice(img_names)

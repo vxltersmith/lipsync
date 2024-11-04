@@ -14,12 +14,13 @@ def _load(checkpoint_path, device):
 
 class Wav2LipModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
-            wav2lip_type='marlin', loss_type='bce'):
+            wav2lip_type='marlin', loss_type='bce', scheduler = False):
         super(Wav2LipModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
         self.syncnet_mel_step_size = syncnet_mel_step_size
         self.checkpoint_path = checkpoint_path
+        self.scheduler = scheduler
         
         assert syncnet_pl_model is not None # it's important to have it
         self.syncnet_pl_model = syncnet_pl_model

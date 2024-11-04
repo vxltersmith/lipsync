@@ -14,11 +14,12 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./debug_checkpoints/", "--checkpoint_path", "./debug_checkpoints/checkpoint_epoch=999_step=1000.ckpt"]
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./debug_checkpoints/", "--limit_train_batches", "1"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--devices", "3", "--data_split", "train_low_sync_score"],
-            ////"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
-            "args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "./lrs_try_v0/", "--limit_train_batches", "1"]
+            //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
+            //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "./lrs_try_v0/", "--limit_train_batches", "1"]
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_path", "./checkpoints/sync_only_checkpoints/checkpoint_epoch=1629_step=26080.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./checkpoints2/", "--checkpoint_path", "./cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"]
+            "args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
         }
     ]
 }

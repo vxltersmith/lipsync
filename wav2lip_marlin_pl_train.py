@@ -38,16 +38,15 @@ def main():
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
-    parser.add_argument('--wav2lip_type', help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
-            default="marlin", type=str)
+    parser.add_argument('--wav2lip_type', 
+        help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
+        default="marlin", type=str)
     
-
     args = parser.parse_args()
-    
 
     # Setup parameters
     num_workers = args.num_workers if args.num_workers is not None else hparams.num_workers
-    batch_size = args.batch_size if args.batch_size is not None else hparams.syncnet_batch_size
+    batch_size = args.batch_size if args.batch_size is not None else hparams.batch_size
     eval_every = args.eval_every if args.eval_every is not None else 1
     limit_val_batches = 1
     
@@ -68,7 +67,8 @@ def main():
         syncnet_mel_step_size = syncnet_mel_step_size_m
         syncnet_T = syncnet_T_m
         
-        wav2lip_type='marlin_full'
+        wav2lip_type='marlin'
+        syncnet_type = 'marlin'
         hparams.img_size = 224
     elif args.wav2lip_type == 'original':
         # Params for Syncnet-orginal and Wav2Lip-original
@@ -79,6 +79,7 @@ def main():
         syncnet_mel_step_size_m = syncnet_mel_step_size
         
         wav2lip_type = 'original'
+        syncnet_type = 'original'
         hparams.img_size = 96
     elif args.wav2lip_type == 'marlin':
         # Params for Syncnet-orginal and Wav2Lip-Marlin
@@ -88,22 +89,26 @@ def main():
         syncnet_T_m = int(3.2 * syncnet_T)       
         syncnet_mel_step_size_m = int(syncnet_mel_step_size * 3.18)
         
-        wav2lip_type = 'original'
-        hparams.img_size = 96    
+        wav2lip_type = 'marlin'
+        syncnet_type = 'original'
+        hparams.img_size = 224    
     
-
-    train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T, syncnet_mel_step_size)
-    test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, wrong_only = False)
+    # syncnet_T_m = 5
+    # syncnet_mel_step_size_m = 16
+    train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size)
+    test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
     val_subset_size = eval_steps
     val_indices = torch.randperm(len(test_dataset))[:val_subset_size]
     val_subset = Subset(test_dataset, val_indices)
-    test_data_loader = DataLoader(val_subset, batch_size=1, num_workers=num_workers, shuffle=False)
+    test_data_loader = DataLoader(val_subset, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     # LipSync-expert model
-    syncnet_pl_model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.syncnet_checkpoint_path)
+    syncnet_pl_model = LipSyncExpertModel(hparams, syncnet_T, syncnet_mel_step_size, args.syncnet_checkpoint_path, 
+            syncnet_type = syncnet_type)
+    syncnet_pl_model.setup() # pre-load model
     # Model
     model = Wav2LipModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, wav2lip_type=wav2lip_type)
 

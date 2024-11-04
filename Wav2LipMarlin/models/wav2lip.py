@@ -16,23 +16,23 @@ class Wav2Lip(nn.Module):
             Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True)),
 
-            nn.Sequential(Conv2d(32, 64, kernel_size=3, stride=2, padding=1),    # 24,24
+            nn.Sequential(Conv2d(32, 64, kernel_size=3, stride=2, padding=1), # 24,24
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True)),
 
-            nn.Sequential(Conv2d(64, 128, kernel_size=3, stride=2, padding=1),   # 12,12
+            nn.Sequential(Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # 12,12
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True)),
 
-            nn.Sequential(Conv2d(128, 256, kernel_size=3, stride=2, padding=1),       # 6,6
+            nn.Sequential(Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # 6,6
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True)),
 
-            nn.Sequential(Conv2d(256, 512, kernel_size=3, stride=2, padding=1),     # 3,3
+            nn.Sequential(Conv2d(256, 512, kernel_size=3, stride=2, padding=1), # 3,3
             Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),),
             
-            nn.Sequential(Conv2d(512, 512, kernel_size=3, stride=1, padding=0),     # 1, 1
+            nn.Sequential(Conv2d(512, 512, kernel_size=3, stride=1, padding=0), # 1, 1
             Conv2d(512, 512, kernel_size=1, stride=1, padding=0)),])
 
         self.audio_encoder = nn.Sequential(
@@ -117,12 +117,161 @@ class Wav2Lip(nn.Module):
 
         if input_dim_size > 4:
             x = torch.split(x, B, dim=0) # [(B, C, H, W)]
-            outputs = torch.stack(x, dim=2) # (B, C, T, H, W)
+            outputs = torch.stack(x, dim=2)  # (B, C, T, H, W)
 
         else:
             outputs = x
             
         return outputs
+
+from marlin_pytorch import Marlin
+# Wav2Lip_Marlin
+class Wav2Lip_Marlin(nn.Module):
+    def __init__(self, backbone = "marlin_vit_base_ytf", 
+            marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt', 
+            marlin_out_dim=768, external_pooler = True):
+        super(Wav2Lip_Marlin, self).__init__()
+        # Modified MARLIN encoder; changed from original
+        self.face_encoder = MARLIN_Encoder_decorator(backbone, marlin_ckpt)
+
+        self.audio_encoder = nn.Sequential(
+            Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+
+            Conv2d(32, 64, kernel_size=3, stride=(3, 1), padding=1),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+
+            Conv2d(64, 128, kernel_size=3, stride=3, padding=1),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+
+            Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1),
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+
+            Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+        )
+
+        self.face_decoder_blocks = nn.ModuleList([
+            nn.Sequential(Conv2d(512, 512, kernel_size=1, stride=1, padding=0),),
+
+            nn.Sequential(Conv2dTranspose(1024, 512, kernel_size=3, stride=1, padding=0), #3,3
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),),
+
+            nn.Sequential(Conv2dTranspose(1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),), # 6, 6
+
+            nn.Sequential(Conv2dTranspose(768, 384, kernel_size=3, stride=2, padding=1, output_padding=1),
+            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True),), # 12, 12
+
+            nn.Sequential(Conv2dTranspose(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),), # 24, 24
+
+            nn.Sequential(Conv2dTranspose(320, 128, kernel_size=3, stride=2, padding=1, output_padding=1), 
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),), # 48, 48
+
+            nn.Sequential(Conv2dTranspose(160, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),),]) # 96,96
+
+        self.output_block = nn.Sequential(Conv2d(80, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0),
+            nn.Sigmoid()) 
+
+    def forward(self, audio_sequences, face_sequences):
+        """
+         audio_sequences = (B, T, 1, 80, 16) \n
+         face_sequences = (B, C, T, 224, 224) MARLIN input dims
+        """
+        B = audio_sequences.size(0)
+
+        input_dim_size = len(face_sequences.size())
+        if input_dim_size > 4:
+            audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
+            # face_sequences = torch.cat([face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0)
+
+        # Extract audio features with shape [B, 512, 1, 1]
+        audio_embedding = self.audio_encoder(audio_sequences)
+        # Extract list of a video features from MARLIN-encoder
+        feats = self.face_encoder(face_sequences)
+        # Compute image decoder 
+        x = audio_embedding
+        for f in self.face_decoder_blocks:
+            x = f(x)
+            try:
+                x = torch.cat((x, feats[-1]), dim=1)
+            except Exception as e:
+                print(x.size())
+                print(feats[-1].size())
+                raise e
+            
+            feats.pop()
+
+        x = self.output_block(x)
+
+        if input_dim_size > 4 and False:
+            x = torch.split(x, B, dim=0) # [(B, C, H, W)]
+            outputs = torch.stack(x, dim=2) # (B, C, T, H, W)
+        else:
+            outputs = x
+            
+        return outputs
+    
+class MARLIN_Encoder_decorator(nn.Module):
+    def __init__(self, 
+            backbone, 
+            marlin_ckpt, 
+            seq_mean_pool = True
+        ):
+        super(MARLIN_Encoder_decorator, self).__init__()
+        self.encoder = Marlin.from_file(backbone, marlin_ckpt).encoder
+        self.seq_mean_pool = seq_mean_pool
+        
+    def extract_features_ae(self, x):
+        encoder = self.encoder
+        batch_size, channels, T_, _,_ = x.shape
+        x = encoder.patch_embedding(x)
+        x = encoder.pos_embedding(x)
+        
+        feats = []
+        for i, block in enumerate(encoder.blocks):
+            x = block(x)
+            if i % 2 == 0: continue
+            # B, 16, 14, 14, 384
+            x_f = x.reshape(batch_size, T_, 14, 14, -1)
+            feats.append(x_f)
+
+        if self.seq_mean_pool:
+            x = x.mean(dim=1)
+        x = encoder.norm(x)
+        feats.append(x)
+        return feats
+    
+    def forward(self, x):
+        """
+        Shape sequence of original encoder
+            x = B, C, T, 224, 224
+        Original shapes of Wav2Lip U-Net     
+            f1 = 48,48
+            f2 = 24,24
+            f3 = 12,12
+            f4 = 6,6
+            f5 = 3,3
+            x_out = 1, 1
+        """
+        x_masked = x[:,:3]
+        x_reference = x[:,3:]
+        with torch.no_grad():
+            masked_feats = self.extract_features_ae(x_masked)
+            x_reference = self.extract_features_ae(x_reference)
+        feats = [torch.cat([masked_feats[_], x_reference[_]], dim=-1) for _ in range(len(masked_feats))]
+        return feats
 
 class Wav2Lip_disc_qual(nn.Module):
     def __init__(self):
@@ -134,19 +283,19 @@ class Wav2Lip_disc_qual(nn.Module):
             nn.Sequential(nonorm_Conv2d(32, 64, kernel_size=5, stride=(1, 2), padding=2), # 48,48
             nonorm_Conv2d(64, 64, kernel_size=5, stride=1, padding=2)),
 
-            nn.Sequential(nonorm_Conv2d(64, 128, kernel_size=5, stride=2, padding=2),    # 24,24
+            nn.Sequential(nonorm_Conv2d(64, 128, kernel_size=5, stride=2, padding=2), # 24,24
             nonorm_Conv2d(128, 128, kernel_size=5, stride=1, padding=2)),
 
-            nn.Sequential(nonorm_Conv2d(128, 256, kernel_size=5, stride=2, padding=2),   # 12,12
+            nn.Sequential(nonorm_Conv2d(128, 256, kernel_size=5, stride=2, padding=2), # 12,12
             nonorm_Conv2d(256, 256, kernel_size=5, stride=1, padding=2)),
 
-            nn.Sequential(nonorm_Conv2d(256, 512, kernel_size=3, stride=2, padding=1),       # 6,6
+            nn.Sequential(nonorm_Conv2d(256, 512, kernel_size=3, stride=2, padding=1), # 6,6
             nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=1)),
 
-            nn.Sequential(nonorm_Conv2d(512, 512, kernel_size=3, stride=2, padding=1),     # 3,3
+            nn.Sequential(nonorm_Conv2d(512, 512, kernel_size=3, stride=2, padding=1), # 3,3
             nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=1),),
             
-            nn.Sequential(nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=0),     # 1, 1
+            nn.Sequential(nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=0), # 1,1
             nonorm_Conv2d(512, 512, kernel_size=1, stride=1, padding=0)),])
 
         self.binary_pred = nn.Sequential(nn.Conv2d(512, 1, kernel_size=1, stride=1, padding=0), nn.Sigmoid())
