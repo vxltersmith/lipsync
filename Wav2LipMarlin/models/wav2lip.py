@@ -123,6 +123,25 @@ class Wav2Lip(nn.Module):
             outputs = x
             
         return outputs
+    
+class CrossAttention(nn.Module):
+    def __init__(self, dim_q, dim_kv, heads=8):
+        super(CrossAttention, self).__init__()
+        self.attn = nn.MultiheadAttention(dim_q, heads)
+        self.proj_kv = nn.Linear(dim_kv, dim_q)
+        self.norm = nn.LayerNorm(dim_q)
+    
+    def forward(self, q, kv):
+        # q: [B, C, H, W], kv: [B, C_audio, 1, 1]
+        B, C_q, H, W = q.shape
+        q = q.view(B, C_q, H * W).permute(2, 0, 1)  # [N, B, C_q]
+        
+        # Reshape kv for cross-attention (audio embedding is 1x1)
+        kv = kv.view(B, kv.shape[1]).unsqueeze(0)  # [1, B, C_kv] if kv is global
+        
+        q = self.attn(q, kv, kv)[0]
+        q = q.permute(1, 2, 0).view(B, C_q, H, W)  # Reshape back to original
+        return q
 
 from marlin_pytorch import Marlin
 # Wav2Lip_Marlin
@@ -192,6 +211,8 @@ class Wav2Lip_Marlin(nn.Module):
         B = audio_sequences.size(0)
 
         input_dim_size = len(face_sequences.size())
+        audio_input_dim_size = len(audio_sequences.size())
+        assert input_dim_size == audio_input_dim_size
         if input_dim_size > 4:
             audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
             # face_sequences = torch.cat([face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0)
@@ -215,23 +236,68 @@ class Wav2Lip_Marlin(nn.Module):
 
         x = self.output_block(x)
 
-        if input_dim_size > 4 and False:
-            x = torch.split(x, B, dim=0) # [(B, C, H, W)]
-            outputs = torch.stack(x, dim=2) # (B, C, T, H, W)
+        if input_dim_size > 4:
+            x_split = torch.split(x, B, dim=0) # [(B, C, H, W)]
+            outputs = torch.stack(x_split, dim=2) # (B, C, T, H, W)
         else:
             outputs = x
             
         return outputs
     
+class Conv1x1WithLayerNorm(nn.Module):
+    def __init__(self, in_channels, out_channels, interpolation_op=None):
+        super(Conv1x1WithLayerNorm, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.layer_norm = nn.LayerNorm(out_channels)
+        self.activation = nn.GELU()
+        self.interpolation_op = interpolation_op  # Set the default interpolation if needed
+
+    def forward(self, x):
+        """
+        x.shape = [B*T, H, W, C]
+        """
+        x = x.permute(0, 3, 1, 2)  # Change to [B*T, C, H, W]
+        if self.interpolation_op:
+            x = self.interpolation_op(x)  # Rescale H, W according to level
+        x = self.conv(x)  # [B*T, out_channels, H, W]
+        x = x.permute(0, 2, 3, 1)  # [B*T, H, W, out_channels] for LayerNorm
+        x = self.layer_norm(x)  # Normalize across channels
+        x = x.permute(0, 3, 1, 2)  # Back to [B*T, out_channels, H, W]
+        x = self.activation(x)
+        return x
+    
+class InterpolationLayer(nn.Module):
+    def __init__(self, size=None, scale_factor=None, mode='nearest', align_corners=True):
+        super(InterpolationLayer, self).__init__()
+        self.size = size
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners if mode == 'bilinear' else None # Only used for modes like 'bilinear'
+
+    def forward(self, x):
+        return F.interpolate(x, size=self.size, scale_factor=self.scale_factor, 
+                             mode=self.mode, align_corners=self.align_corners)
+    
 class MARLIN_Encoder_decorator(nn.Module):
     def __init__(self, 
             backbone, 
             marlin_ckpt, 
-            seq_mean_pool = True
+            seq_mean_pool = False
         ):
         super(MARLIN_Encoder_decorator, self).__init__()
         self.encoder = Marlin.from_file(backbone, marlin_ckpt).encoder
         self.seq_mean_pool = seq_mean_pool
+        
+        # Instantiate the list of align convs with interpolations attached, needed to match original architecture 
+        self.channel_align_convs = nn.ModuleList([
+            Conv1x1WithLayerNorm(384*2, 512, nn.AdaptiveAvgPool2d((1, 1))),     # 512, 1, 1
+            Conv1x1WithLayerNorm(384*2, 512, nn.AdaptiveAvgPool2d((3, 3))),     # 512, 3, 3
+            Conv1x1WithLayerNorm(384*2, 256, nn.AdaptiveAvgPool2d((6, 6))),     # 256, 6, 6
+            Conv1x1WithLayerNorm(384*2, 128, nn.AdaptiveMaxPool2d((12, 12))),   # 128, 12, 12
+            Conv1x1WithLayerNorm(384*2, 64, InterpolationLayer(size=(24, 24))), # 64, 24, 24
+            Conv1x1WithLayerNorm(384*2, 32, InterpolationLayer(size=(48, 48))), # 32, 48, 48
+            Conv1x1WithLayerNorm(384*2, 16, InterpolationLayer(size=(96, 96)))  # 16, 96, 96
+        ])
         
     def extract_features_ae(self, x):
         encoder = self.encoder
@@ -249,7 +315,10 @@ class MARLIN_Encoder_decorator(nn.Module):
 
         if self.seq_mean_pool:
             x = x.mean(dim=1)
-        x = encoder.norm(x)
+            x = encoder.norm(x)
+            x = x.unsqueeze(-1).unsqueeze(-1)
+        else:
+            x = x.reshape(batch_size, T_, 14, 14, -1)
         feats.append(x)
         return feats
     
@@ -257,20 +326,35 @@ class MARLIN_Encoder_decorator(nn.Module):
         """
         Shape sequence of original encoder
             x = B, C, T, 224, 224
-        Original shapes of Wav2Lip U-Net     
-            f1 = 48,48
-            f2 = 24,24
-            f3 = 12,12
-            f4 = 6,6
-            f5 = 3,3
-            x_out = 1, 1
+        Original shapes of Wav2Lip U-Net encoder  
+            f0 = 16, 96,96
+            f1 = 64, 48,48
+            f2 = 64, 24,24
+            f3 = 128, 12,12
+            f4 = 256, 6,6
+            f5 = 512, 3,3
+            x_out = 512, 1, 1
         """
+        # Extract original feature-maps with MARLIN-encoder
         x_masked = x[:,:3]
         x_reference = x[:,3:]
         with torch.no_grad():
             masked_feats = self.extract_features_ae(x_masked)
-            x_reference = self.extract_features_ae(x_reference)
-        feats = [torch.cat([masked_feats[_], x_reference[_]], dim=-1) for _ in range(len(masked_feats))]
+            reference_feats = self.extract_features_ae(x_reference)
+        # Adaption to Wav2Lip default U-NET decoder
+        feats = []
+        for i in range(len(masked_feats)):
+            masked_f_map = masked_feats[-1]
+            reference_f_map = reference_feats[-1]
+            
+            feat = torch.cat([masked_f_map, reference_f_map], dim=-1)
+            feat = feat.reshape(-1, feat.size(2), feat.size(3), feat.size(4)) # Reshape to B*T, H, W, C
+            feat = self.channel_align_convs[i](feat) 
+            feats.append(feat)
+            masked_feats.pop()
+            reference_feats.pop()
+        
+        feats.reverse()
         return feats
 
 class Wav2Lip_disc_qual(nn.Module):

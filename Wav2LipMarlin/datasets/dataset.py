@@ -90,6 +90,8 @@ class Wav2LipDataset(object):
                 return None
             mels.append(m.T)
 
+        assert len(mels) == self.syncnet_T
+        
         mels = np.asarray(mels)
         return mels # Frames, n_mels, T
 
@@ -97,7 +99,6 @@ class Wav2LipDataset(object):
         # 3 x T x H x W
         x = np.asarray(window) / 255.
         x = np.transpose(x, (3, 0, 1, 2))
-
         return x
 
     def __len__(self):

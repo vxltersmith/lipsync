@@ -1,5 +1,5 @@
 from os.path import join, exists
-from os import mkdir
+from os import makedirs
 import numpy as np
 import cv2
 
@@ -11,7 +11,7 @@ def save_sample_images(x, g, gt, global_step, checkpoint_dir):
 
     refs, inps = x[..., 3:], x[..., :3]
     folder = join(checkpoint_dir, "samples_step{:09d}".format(global_step))
-    if not exists(folder): mkdir(folder)
+    makedirs(folder, exist_ok=True)
     collage = np.concatenate((refs, inps, g, gt), axis=-2)
     for batch_idx, c in enumerate(collage):
         for t in range(len(c)):

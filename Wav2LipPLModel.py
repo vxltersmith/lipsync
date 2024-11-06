@@ -4,7 +4,7 @@ from Wav2LipMarlin.utils import save_sample_images
 from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
-
+import torch.nn.functional as F
 
 
 
@@ -77,42 +77,51 @@ class Wav2LipModel(LightningModule):
         g = g[:, :, :, g.size(3)//2:]
         g = torch.cat([g[:, :, i] for i in range(self.syncnet_T)], dim=1)
         
-        # B, 3 * T, H//2, W
-        a, v = self.syncnet_model(mel, g)
+        syncnet_model = self.syncnet_pl_model.model
+        # B, 3 * T, H//2, W || 3 * T == channels * temporal size
+        a, v = syncnet_model(mel, g)
         
         y = torch.ones(g.size(0), 1).float().to(self.device)
         return self.cosine_loss(a, v, y)
+    
+    def get_mse_loss(self, g, gt):
+        if g.shape[3:] < gt.shape[3:]:
+            # Resize the generated image (g) to match the ground truth (gt) size
+            batch_size, C, T, H, W = g.shape
+            g_inter = g.permute(0, 2, 1, 3, 4)
+            g_inter = g_inter.reshape(batch_size*T, C, H, W)
+            g_inter = F.interpolate(g_inter, size=(gt.shape[3], gt.shape[4]), mode='bilinear', align_corners=False)
+            g_inter = g_inter.reshape(batch_size, T, C, gt.shape[3], gt.shape[4])
+            g = g_inter.permute(0, 2, 1, 3, 4)
+        l1loss = self.recon_loss(g, gt)
+        return l1loss, g
 
     def training_step(self, batch, batch_idx):
         # Training loop logic
-        x, mel, indiv_mels, gt = batch
+        x, indiv_mels, mel, gt = batch
         # Preprocess input
         # MARLIN dims (B, C, T, H, W)
         # Original video input is a lower half of a face, here it's concatenated with blank other half 
         # to match MARLIN input H,W
         g = self.model(indiv_mels, x)
 
-        if self.hparams.syncnet_wt > 0.:
+        syncnet_wt = self.config.syncnet_wt
+        if syncnet_wt > 0.:
             sync_loss = self.get_sync_loss(mel, g)
         else:
             sync_loss = 0. 
 
-        l1loss = self.recon_loss(g, gt)
+        l1loss, g = self.get_mse_loss(g, gt)
 
-        syncnet_wt = self.hparams.syncnet_wt
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
 
-        if self.global_step % self.hparams.checkpoint_interval == 0:
+        if self.global_step % self.config.checkpoint_interval == 0:
             save_sample_images(x, g, gt, self.global_step, self.samples_dir)
 
-        if self.hparams.syncnet_wt > 0.:
-            running_sync_loss += sync_loss.item()
-        else:
-            running_sync_loss += 0.
-
         # Logging
-        self.log('L1: ', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log('Sync Loss: ', running_sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('L1', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        if syncnet_wt > 0.:
+            self.log('Sync Loss', sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -122,11 +131,11 @@ class Wav2LipModel(LightningModule):
         g = self.model(indiv_mels, x)
 
         sync_loss = self.get_sync_loss(mel, g)
-        l1loss = self.recon_loss(g, gt)
+        l1loss, g = self.get_mse_loss(g, gt)
        
         # Logging
-        self.log('L1: ', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log('Sync Loss: ', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('L1', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('Sync Loss', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return sync_loss
 
     def on_validation_epoch_end(self):
@@ -139,7 +148,7 @@ class Wav2LipModel(LightningModule):
 
         # Adjust the sync weight if needed
         if averaged_sync_loss and averaged_sync_loss < 0.75:
-            self.hparams.syncnet_wt = 0.01
+            self.config.syncnet_wt = 0.01
     
     def predict_step(self, batch, batch_idx):
         # Validation loop logic

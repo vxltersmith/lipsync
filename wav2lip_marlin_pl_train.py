@@ -19,7 +19,7 @@ from pytorch_lightning import seed_everything
 # Create a TensorBoard logger
 logger = TensorBoardLogger(
     save_dir='./logs/lightning_logs',   # Directory where logs will be saved
-    name='syncnet_training',                    # Name of the experiment (log folder name)
+    name='wav2lip_training',            # Name of the experiment (log folder name)
 )
 
 def main():
