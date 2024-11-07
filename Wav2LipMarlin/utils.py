@@ -55,7 +55,8 @@ def save_sample_videos(x, g, gt, global_step, checkpoint_dir, fps=25, video_file
         # Write each frame from the collage to the video file
         for t in range(T):
             frame = collage[batch_idx, t]
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB for saving
+            frame_rgb = frame
+            #frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB for saving
             video_writer.write(frame_rgb)
         
         video_writer.release()  # Release the video writer

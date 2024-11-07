@@ -19,7 +19,10 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_path", "./checkpoints/sync_only_checkpoints/checkpoint_epoch=1629_step=26080.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./checkpoints2/", "--checkpoint_path", "./cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"]
-            "args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v1", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip/debug/sl_checkpoint_epoch=11_step=69012.ckpt"],
+            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v1", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip/debug/sl_checkpoint_epoch=11_step=69012.ckpt"],
+            "args": ["--video_path", "/data/CelebVHQ/35666/HPqlIj7CiE4_0/HPqlIj7CiE4_0.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
+            //"args": ["--video_path", "/data/CelebVHQ/35666/DUB3sMP5shA_2/DUB3sMP5shA_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
+            //"args": ["--video_path", "/data/CelebVHQ/35666/__lRwnjxeCg_2/__lRwnjxeCg_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
         }
     ]
 }
