@@ -138,10 +138,13 @@ class LipSyncExpertModel(LightningModule):
         audio_embedding, video_embedding = self(mel, x_full)
         # Cosine similarity
         sync_scores = torch.nn.functional.cosine_similarity(video_embedding, audio_embedding, dim=-1)
-        y = y * 2 -1
-        cos_loss = torch.nn.functional.cosine_embedding_loss(video_embedding, audio_embedding, y[0])
+        sync_scores = (sync_scores + 1) / 2
         sync_scores = sync_scores.cpu().mean()
-        print(f'Step {batch_idx}, score: {sync_scores}, loss: {cos_loss}')
+        
+        y = y.repeat(audio_embedding.size(0), 1)
+        loss = self.cosine_loss(audio_embedding, video_embedding, y)
+        
+        print(f'Step {batch_idx}, score: {sync_scores}, loss: {loss}')
         return sync_scores
 
     def configure_optimizers(self):

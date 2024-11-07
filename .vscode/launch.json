@@ -14,7 +14,9 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./debug_checkpoints/", "--checkpoint_path", "./debug_checkpoints/checkpoint_epoch=999_step=1000.ckpt"]
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./debug_checkpoints/", "--limit_train_batches", "1"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--devices", "3", "--data_split", "train_low_sync_score"],
-            //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
+            //"args": ["--data_root", "/data/LRS2/main/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
+            //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_path", "./checkpoints/no_adapter_new_dataloader_fixed_bce_loss_v2/checkpoint_epoch=499_step=179500.ckpt"],
+            
             //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "./lrs_try_v0/", "--limit_train_batches", "1"]
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_path", "./checkpoints/sync_only_checkpoints/checkpoint_epoch=1629_step=26080.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug"],
@@ -23,6 +25,7 @@
             "args": ["--video_path", "/data/CelebVHQ/35666/HPqlIj7CiE4_0/HPqlIj7CiE4_0.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
             //"args": ["--video_path", "/data/CelebVHQ/35666/DUB3sMP5shA_2/DUB3sMP5shA_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
             //"args": ["--video_path", "/data/CelebVHQ/35666/__lRwnjxeCg_2/__lRwnjxeCg_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
+            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
         }
     ]
 }

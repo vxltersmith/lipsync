@@ -25,6 +25,7 @@ def plot_binned_histogram(scores, experiment_name = 'unsynced'):
     scores = scores.cpu().numpy()
     # Define bins for discrete intervals (e.g., 10% intervals)
     bins = np.array([0, 0.05, 0.1, 0.25, 0.45, 0.5, 0.55, 0.75, 0.9, 0.95, 1])
+    bins = np.arange(0, 1, 0.05)
     #bins = None
     plt.hist(scores, bins=bins, edgecolor='black', alpha=0.7)
     plt.ylim(0, scores.shape[0]+5)  # Set y-axis range if provided
@@ -97,6 +98,7 @@ def main():
         num_workers=hparams.num_workers)
     # Run predictions using Trainer.predict
     predictions = trainer.predict(model, predict_data_loader)
+    predictions = [_ for _ in predictions if _ is not None]
     plot_binned_histogram(predictions, 'synced')
     
     # Running unsynced test
@@ -107,6 +109,7 @@ def main():
         num_workers=hparams.num_workers)
     # Run predictions using Trainer.predict
     predictions = trainer.predict(model, predict_data_loader)
+    predictions = [_ for _ in predictions if _ is not None]
     plot_binned_histogram(predictions, 'unsynced')
     
 
