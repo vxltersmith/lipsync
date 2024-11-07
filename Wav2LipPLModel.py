@@ -1,6 +1,6 @@
 from Wav2LipMarlin.models.wav2lip import Wav2Lip as Wav2Lip_Original
 from Wav2LipMarlin.models.wav2lip import Wav2Lip_Marlin
-from Wav2LipMarlin.utils import save_sample_images
+from Wav2LipMarlin.utils import save_sample_videos, save_sample_images
 from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
@@ -83,16 +83,50 @@ class Wav2LipModel(LightningModule):
         
         y = torch.ones(g.size(0), 1).float().to(self.device)
         return self.cosine_loss(a, v, y)
-    
+
+    def sliding_window_loss(self, mel, g):
+        """
+        mel: full mel-spectrogram of the original clip
+        g: a generated frames and croped lower half of faces
+        
+        output: averaged sync_loss over the temporal window longer that syncnet_T
+        """
+        syncnet_model = self.syncnet_pl_model.model
+        
+        batch_size = g.size(0)
+        temporal_size = self.syncnet_T  # Temporal window size (T)
+        frame_height = g.size(3)  # Height of the frame
+        frame_width = g.size(4)   # Width of the frame
+        
+        g = g[:, :, :, g.size(3)//2:]
+        # Sliding window approach (to make it fit model's expected input)
+        losses = []
+        # Adjust T2 (current temporal size) to T (desired temporal size)
+        for start_idx in range(0, g.size(2) - temporal_size + 1, temporal_size):  # Sliding across time dimension
+            # Select a slice of T frames (of size temporal_size)
+            window_g = g[:, :, start_idx:start_idx + temporal_size, :, :]  # Shape B, C, T, H, W
+            # Temporal concatenation: Convert from (B, C, T, H, W) to (B, C*T, H, W)
+            window_g = torch.cat([window_g[:, :, i] for i in range(temporal_size)], dim=1)  # B, C*T, H, W
+            # For each temporal window, compute the sync loss
+            a, v = syncnet_model(mel, window_g)
+            # We want the ground truth label to be 1 for positive pairs
+            y = torch.ones(batch_size, 1).float().to(self.device)
+            # Calculate the cosine loss for this window
+            loss = self.cosine_loss(a, v, y)
+            losses.append(loss)
+        # Average the losses over all windows
+        avg_loss = torch.mean(torch.stack(losses))
+        return avg_loss
+
     def get_mse_loss(self, g, gt):
+        # Resize the generated image (g) to match the ground truth (gt) size if necessary
         if g.shape[3:] < gt.shape[3:]:
-            # Resize the generated image (g) to match the ground truth (gt) size
             batch_size, C, T, H, W = g.shape
-            g_inter = g.permute(0, 2, 1, 3, 4)
-            g_inter = g_inter.reshape(batch_size*T, C, H, W)
-            g_inter = F.interpolate(g_inter, size=(gt.shape[3], gt.shape[4]), mode='bilinear', align_corners=False)
-            g_inter = g_inter.reshape(batch_size, T, C, gt.shape[3], gt.shape[4])
-            g = g_inter.permute(0, 2, 1, 3, 4)
+            g = g.permute(0, 2, 1, 3, 4).contiguous()  # [batch_size, T, C, H, W]
+            g = F.interpolate(g.view(-1, C, H, W), size=gt.shape[3:], mode='bilinear', align_corners=False)
+            g = g.view(batch_size, T, C, *gt.shape[3:]).permute(0, 2, 1, 3, 4)  # [batch_size, C, T, new_H, new_W]
+        
+        # Compute L1 loss
         l1loss = self.recon_loss(g, gt)
         return l1loss, g
 
@@ -116,12 +150,13 @@ class Wav2LipModel(LightningModule):
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
 
         if self.global_step % self.config.checkpoint_interval == 0:
+            save_sample_videos(x, g, gt, self.global_step, self.samples_dir)
             save_sample_images(x, g, gt, self.global_step, self.samples_dir)
 
         # Logging
-        self.log('L1', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('L1_loss_train', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         if syncnet_wt > 0.:
-            self.log('Sync Loss', sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+            self.log('Sync_Loss_train', sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -130,25 +165,25 @@ class Wav2LipModel(LightningModule):
 
         g = self.model(indiv_mels, x)
 
-        sync_loss = self.get_sync_loss(mel, g)
+        sync_loss = self.sliding_window_loss(mel, g)
         l1loss, g = self.get_mse_loss(g, gt)
        
         # Logging
-        self.log('L1', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log('Sync Loss', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('L1_val', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('Sync_Loss_val', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return sync_loss
 
     def on_validation_epoch_end(self):
         # Access the averaged epoch loss directly, as PL logs them automatically
-        averaged_sync_loss = self.trainer.callback_metrics.get("sync_loss")
-        averaged_recon_loss = self.trainer.callback_metrics.get("L1_loss")
+        averaged_sync_loss = self.trainer.callback_metrics.get("Sync_Loss_val")
+        averaged_recon_loss = self.trainer.callback_metrics.get("L1_val")
 
         # Optionally print or take further action based on the averaged losses
         print(f"Epoch End - L1: {averaged_recon_loss}, Sync Loss: {averaged_sync_loss}")
 
         # Adjust the sync weight if needed
         if averaged_sync_loss and averaged_sync_loss < 0.75:
-            self.config.syncnet_wt = 0.01
+            self.config.set_hparam('syncnet_wt', 0.01)
     
     def predict_step(self, batch, batch_idx):
         # Validation loop logic

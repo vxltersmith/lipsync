@@ -115,9 +115,17 @@ def main():
     # Checkpointing
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join('./checkpoints/wav2lip/', args.checkpoint_dir),
-        filename='checkpoint_{epoch:02d}_{step:02d}',
+        filename='l1_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
-        monitor='train_loss',
+        monitor='L1',
+        mode='min'
+    )
+    
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join('./checkpoints/wav2lip/', args.checkpoint_dir),
+        filename='sl_checkpoint_{epoch:02d}_{step:02d}',
+        save_top_k=10,
+        monitor='Sync Loss',
         mode='min'
     )
     
