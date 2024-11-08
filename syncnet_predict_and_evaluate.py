@@ -39,6 +39,42 @@ def plot_binned_histogram(scores, experiment_name = 'unsynced'):
     # Close the plot to free memory
     plt.close()
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from sklearn.metrics import roc_curve, roc_auc_score
+
+def plot_binned_histogram_with_rocauc(scores, true_labels, experiment_name='unsynced'):
+    """
+    Plot binned histogram of the scores and compute ROC-AUC curve.
+    
+    Parameters:
+        scores (torch.Tensor): Tensor of predicted scores.
+        true_labels (torch.Tensor): Tensor of true labels (binary).
+        experiment_name (str): The name for saving the plot.
+    """
+    # Convert scores to numpy for histogram plotting
+    scores = torch.stack(scores, 0)
+    scores = scores.cpu().numpy()
+    true_labels = true_labels.cpu().numpy()  # Convert true labels to numpy  
+    # Calculate ROC-AUC
+    auc_score = roc_auc_score(true_labels, scores)
+    # Compute ROC curve
+    fpr, tpr, thresholds = roc_curve(true_labels, scores)
+    # Plot ROC curve
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='blue', label=f'ROC curve (AUC = {auc_score:.2f})')
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Random classifier')
+    plt.title(f'ROC Curve - {experiment_name}')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend(loc='lower right')
+    plt.grid(True)
+    plt.savefig(f'{experiment_name}_roc_curve.png', format='png')
+    plt.close()
+    # Optionally, print the AUC score
+    print(f"ROC-AUC Score for {experiment_name}: {auc_score:.4f}")
+
 
 def main():
     # Argument Parsing
@@ -99,19 +135,31 @@ def main():
     # Run predictions using Trainer.predict
     predictions = trainer.predict(model, predict_data_loader)
     predictions = [_ for _ in predictions if _ is not None]
+    predictions_pos = predictions
+    predictions_pos_labels = torch.ones(len(predictions))
     plot_binned_histogram(predictions, 'synced')
     
-    # Running unsynced test
-    predict_dataset_wrong = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, 
-        wrong_only = True)
-    # Wrap the data in a DataLoader (PyTorch Lightning requires DataLoader)
-    predict_data_loader = DataLoader(predict_dataset_wrong, batch_size=1, shuffle=False,
-        num_workers=hparams.num_workers)
-    # Run predictions using Trainer.predict
-    predictions = trainer.predict(model, predict_data_loader)
-    predictions = [_ for _ in predictions if _ is not None]
-    plot_binned_histogram(predictions, 'unsynced')
+    # Running unsynced test with a range of offsets
+    offsets = [1, 3, 5, 7, 15, 25]
     
+    for current_offset in offsets:
+        predict_dataset_wrong = FullVideoSyncDataset(args.data_root, 'val', hparams, syncnet_T, syncnet_mel_step_size, 
+            wrong_only = True, offset=current_offset)
+        # Wrap the data in a DataLoader (PyTorch Lightning requires DataLoader)
+        predict_data_loader = DataLoader(predict_dataset_wrong, batch_size=1, shuffle=False,
+            num_workers=hparams.num_workers)
+        # Run predictions using Trainer.predict
+        predictions = trainer.predict(model, predict_data_loader)
+        predictions = [_ for _ in predictions if _ is not None]
+        predictions_negs = predictions
+        predictions_negs_labels = torch.zeros(len(predictions))
+        plot_binned_histogram(predictions, 'unsynced')
+        
+        plot_binned_histogram_with_rocauc(
+            predictions_pos+predictions_negs, 
+            torch.cat([predictions_pos_labels, predictions_negs_labels]), 
+            f'mismatch_offset {current_offset}'
+        )
 
 if __name__ == "__main__":
     main()
