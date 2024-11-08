@@ -10,8 +10,8 @@ import tempfile
 from Wav2LipMarlin.hparams import hparams
 import Wav2LipMarlin.datasets.audio as audio
 from SyncNetPLModel import LipSyncExpertModel
-
 import Wav2LipMarlin.face_detection as face_detection
+
 
 # Utility function to read video frames
 def load_video_frames(video_path, img_size=96):
@@ -25,8 +25,9 @@ def load_video_frames(video_path, img_size=96):
         frame = frame[:, :, ::-1]  # Convert BGR (OpenCV) to RGB
         frames.append(frame)
     cap.release()
-    video_tensor = torch.tensor(frames).permute(3, 0, 1, 2).float() / 255.0  # Shape: C, T, H, W
+    video_tensor = torch.tensor(np.array(frames)).permute(3, 0, 1, 2).float() / 255.0  # Shape: C, T, H, W
     return video_tensor.unsqueeze(0)  # Shape: 1, C, T, H, W
+
 
 # Utility function to compute the mel spectrogram for audio
 def load_mel_spectrogram(audio_path, config):
@@ -34,6 +35,7 @@ def load_mel_spectrogram(audio_path, config):
     mel = audio.melspectrogram(wav, config).T
     mel = torch.FloatTensor(mel.T).unsqueeze(0)
     return mel, wav
+
 
 def crop_audio_window(spec, start_frame_num, syncnet_mel_step_size, config):
     # Calculate frames per second (mel frames per video frame)
@@ -59,31 +61,38 @@ def crop_audio_window(spec, start_frame_num, syncnet_mel_step_size, config):
 def evaluate_video_sync(video_frames, mel, syncnet_model, device):
     """
     Evaluates synchronization scores across an entire video using non-overlapping windows.
+    Adjusts the start of the last window if needed to cover the entire video length.
     """
     sync_scores = []
     temporal_size = syncnet_model.syncnet_T  # Expected window size
     syncnet_mel_step_size = syncnet_model.syncnet_mel_step_size
     config = syncnet_model.config
 
-    for start_idx in range(0, video_frames.size(2) - temporal_size + 1, temporal_size):
-        window_g = video_frames[:, :, start_idx:start_idx + temporal_size, :, :]
+    num_frames = video_frames.size(2)
+    # Loop through each window (including partial at the end)
+    for start_idx in range(0, num_frames, temporal_size):
+        # Determine the window range, handling both full and partial windows
+        end_idx = min(start_idx + temporal_size, num_frames)
+        window_g = video_frames[:, :, start_idx:end_idx, :, :]
+        # Repeat frames if it's a partial window to match temporal size
+        if window_g.size(2) < temporal_size:
+            last_frame = window_g[:, :, -1:, :, :]
+            window_g = torch.cat([window_g, last_frame.repeat(1, 1, temporal_size - window_g.size(2), 1, 1)], dim=2)
+        
         window_g = torch.cat([window_g[:, :, i] for i in range(temporal_size)], dim=1)
-        window_g = window_g[:,:,window_g.size(2)//2:,:]
+        window_g = window_g[:, :, window_g.size(2)//2:, :]
         window_g = window_g.to(device)
         
         mel_c = crop_audio_window(mel[0].T, start_idx, syncnet_mel_step_size, config).T
         mel_c = mel_c.unsqueeze(0).unsqueeze(0)
         mel_c = mel_c.to(device)
-        
-        if mel_c.shape[-1] < syncnet_mel_step_size:
-            sync_scores.append(torch.zeros(1))
-            continue
-
-        a, v = syncnet_model(mel_c, window_g)
-        sync_score = nn.functional.cosine_similarity(a, v)
-        sync_scores.append(sync_score)
-
+        # Only compute sync score if the audio segment is valid
+        if mel_c.shape[-1] >= syncnet_mel_step_size:
+            a, v = syncnet_model(mel_c, window_g)
+            sync_score = nn.functional.cosine_similarity(a, v)
+            sync_scores.append(sync_score)
     return sync_scores
+
 
 def overlay_sync_scores(video_path, sync_scores, output_path, temporal_size, fps=25):
     cap = cv2.VideoCapture(video_path)
@@ -92,29 +101,34 @@ def overlay_sync_scores(video_path, sync_scores, output_path, temporal_size, fps
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    score_idx = 0  # Track which sync score we are on
-    frame_count = 0  # Frame counter to manage which window/frame we are on
+    # Set a scale factor for text size based on video dimensions
+    scale_factor = min(width, height) / 500.0
 
+    score_idx = 0  # Track the current sync score index
+    frame_count = 0  # Track the current frame
+
+    frames = []
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-
-        # Display sync score for each frame in the window
-        if score_idx < len(sync_scores):
-            # Display the sync score for the current window
-            score_text = f"Sync Score: {sync_scores[score_idx].item():.3f}"
-            cv2.putText(frame, score_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 
-                        1, (0, 255, 0), 2, cv2.LINE_AA)
-            
-            # Update frame_count to move to the next window after `temporal_size` frames
-            if frame_count % temporal_size == 0:
-                score_idx += 1
-
-        out.write(frame)
+        frames.append(frame)
         frame_count += 1
-
     cap.release()
+    
+    sync_scores = [item for item in sync_scores for _ in range(temporal_size)]
+    for frame in frames:
+        # Ensure we don't go out of sync_scores bounds
+        if score_idx < len(sync_scores):
+            score_text = f"Sync Score: {sync_scores[score_idx].item():.3f}"
+            font_scale = 1.0 * scale_factor
+            thickness = max(1, int(2 * scale_factor))
+            # Draw text on the frame
+            cv2.putText(frame, score_text, (int(width*0.1), int(height*0.1)), cv2.FONT_HERSHEY_SIMPLEX, 
+                        font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
+            # Update score_idx based on the temporal window
+            score_idx += 1
+        out.write(frame)
     out.release()
     print(f"Annotated video saved to {output_path}")
 
@@ -123,7 +137,7 @@ def combine_video_audio_ffmpeg(video_path, audio_path, output_path):
     input_video = ffmpeg.input(video_path)
     input_audio = ffmpeg.input(audio_path)
     ffmpeg.output(input_video, input_audio, output_path, vcodec='libx264', acodec='aac').run()
-    
+
 def remove_temp_files(video_path, audio_path):
     import os
     if os.path.exists(video_path):
