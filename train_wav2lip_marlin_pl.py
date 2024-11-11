@@ -112,22 +112,26 @@ def main():
     # Model
     model = Wav2LipModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, wav2lip_type=wav2lip_type)
 
-    # Checkpointing
+    # Checkpointing callbacks
+    checkpoint_callbacks = []
     checkpoint_callback = ModelCheckpoint(
-        dirpath=os.path.join('./checkpoints/wav2lip/', args.checkpoint_dir),
-        filename='l1_checkpoint_{epoch:02d}_{step:02d}',
+        dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
+        filename='l1_tr_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
-        monitor='L1',
+        monitor='L1_loss_train_epoch',
         mode='min'
     )
+    checkpoint_callbacks.append(checkpoint_callback)
     
     checkpoint_callback = ModelCheckpoint(
-        dirpath=os.path.join('./checkpoints/wav2lip/', args.checkpoint_dir),
+        dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
         filename='sl_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
-        monitor='Sync Loss',
+        monitor='Sync_Loss_val_epoch',
         mode='min'
     )
+    checkpoint_callbacks.append(checkpoint_callback)
+    
     
     accelerator = args.accelerator
     if accelerator == 'gpu':
@@ -149,8 +153,8 @@ def main():
         log_every_n_steps=4,
         logger = logger,
         precision = args.precision,              # Enable FP16 mixed precision training
-        callbacks = [checkpoint_callback],
-        check_val_every_n_epoch = eval_every # Validation after every N epoch
+        callbacks = checkpoint_callbacks,
+        check_val_every_n_epoch = eval_every     # Validation after every N epoch
     )
 
     # Training

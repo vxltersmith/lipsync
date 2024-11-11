@@ -20,8 +20,8 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./checkpoints2/", "--checkpoint_path", "./cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"]
             
             // train wav2lip args
-            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v1", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip/debug/sl_checkpoint_epoch=11_step=69012.ckpt"],
-            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],          
+            "args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v3", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_v3/sl_checkpoint_epoch=06_step=40257.ckpt"],
+            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v2", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "2"],          
 
             // evaluate syncnet args
             //"args": ["--data_root", "/data/CelebVHQ/", "--test_original", "true", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--devices", "3", "--data_split", "train_low_sync_score"],
@@ -32,7 +32,7 @@
             //"args": ["--video_path", "/data/CelebVHQ/35666/HPqlIj7CiE4_0/HPqlIj7CiE4_0.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"],
             //"args": ["--video_path", "/data/CelebVHQ/35666/DUB3sMP5shA_2/DUB3sMP5shA_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
             //"args": ["--video_path", "/data/CelebVHQ/35666/__lRwnjxeCg_2/__lRwnjxeCg_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
-            "args": ["--video_path", "/data/LRS2/mvlrs_v1/main/5892739798226746824/00002.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
+            //"args": ["--video_path", "/data/LRS2/mvlrs_v1/main/5892739798226746824/00002.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
         }
     ]
 }

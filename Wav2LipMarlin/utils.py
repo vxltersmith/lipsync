@@ -61,3 +61,51 @@ def save_sample_videos(x, g, gt, global_step, checkpoint_dir, fps=25, video_file
         
         video_writer.release()  # Release the video writer
         print(f"Video saved for batch {batch_idx} at {video_path}")
+        
+        
+import os
+import numpy as np
+from glob import glob
+
+def load_and_concatenate_all_batches(checkpoint_dir, global_step, output_filename):
+    # Define the folder where images were saved
+    folder = os.path.join(checkpoint_dir, "samples_step{:09d}".format(global_step))
+    
+    # Get list of all saved images sorted by filename
+    image_files = sorted(glob(os.path.join(folder, '*.jpg')))
+    
+    # Dictionary to group images by batch index
+    images_by_batch = {}
+    
+    # Organize file paths by batch index
+    for img_path in image_files:
+        # Extract batch index and time step from filename (format is 'batchidx_timestep.jpg')
+        filename = os.path.basename(img_path)
+        batch_idx, timestep = map(int, filename.split('.')[0].split('_'))
+        
+        # Append to batch dictionary
+        if batch_idx not in images_by_batch:
+            images_by_batch[batch_idx] = []
+        images_by_batch[batch_idx].append(img_path)
+    
+    # List to hold concatenated images for each batch
+    concatenated_batches = []
+    
+    # Load, sort by timestep, and concatenate images for each batch
+    for batch_idx, image_paths in sorted(images_by_batch.items()):
+        # Sort image paths by timestep within each batch
+        image_paths = sorted(image_paths, key=lambda x: int(os.path.basename(x).split('_')[1].split('.')[0]))
+        
+        # Load images and concatenate them along the y-axis
+        images = [cv2.imread(img_path) for img_path in image_paths]
+        concatenated_image = np.concatenate(images, axis=0)
+        
+        # Add the concatenated batch to our list
+        concatenated_batches.append(concatenated_image)
+    
+    # Concatenate all batches horizontally along the x-axis
+    final_image = np.concatenate(concatenated_batches, axis=1)
+    
+    # Save the final concatenated image
+    cv2.imwrite(output_filename, final_image)
+    print("Final concatenated image saved to:", output_filename)

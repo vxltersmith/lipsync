@@ -121,7 +121,7 @@ class Wav2LipModel(LightningModule):
     def get_mse_loss(self, g, gt):
         # Resize the generated image (g) to match the ground truth (gt) size if necessary
         if g.shape[3:] < gt.shape[3:]:
-            batch_size, C, T, H, W = g.shape
+            batch_size, C, T, H, W = g.shape #[ B, C, T, H, W]
             g = g.permute(0, 2, 1, 3, 4).contiguous()  # [batch_size, T, C, H, W]
             g = F.interpolate(g.view(-1, C, H, W), size=gt.shape[3:], mode='bilinear', align_corners=False)
             g = g.view(batch_size, T, C, *gt.shape[3:]).permute(0, 2, 1, 3, 4)  # [batch_size, C, T, new_H, new_W]
@@ -157,6 +157,8 @@ class Wav2LipModel(LightningModule):
         self.log('L1_loss_train', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         if syncnet_wt > 0.:
             self.log('Sync_Loss_train', sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        
+        self.log('Total_loss_train', loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -167,10 +169,14 @@ class Wav2LipModel(LightningModule):
 
         sync_loss = self.sliding_window_loss(mel, g)
         l1loss, g = self.get_mse_loss(g, gt)
-       
+
+        syncnet_wt = self.config.syncnet_wt
+        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
+        
         # Logging
         self.log('L1_val', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.log('Sync_Loss_val', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log('Total_loss_val', loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return sync_loss
 
     def on_validation_epoch_end(self):
