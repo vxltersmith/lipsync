@@ -5,7 +5,7 @@ import os, random
 import cv2
 import torch
 import numpy as np
-
+import ffmpeg
 import torchvision.transforms as transforms
 
 
@@ -68,24 +68,24 @@ class Wav2LipDataset(object):
 
         return window
 
-    def crop_audio_window(self, spec, start_frame):
+    def crop_audio_window(self, spec, start_frame, fps: float):
         if type(start_frame) == int:
             start_frame_num = start_frame
         else:
             start_frame_num = self.get_frame_id(start_frame) # 0-indexing ---> 1-indexing
-        start_idx = int(80. * (start_frame_num / float(self.hparams.fps)))
+        start_idx = int(80. * (start_frame_num / float(fps)))
         
         end_idx = start_idx + self.syncnet_mel_step_size
 
         return spec[start_idx : end_idx, :]
 
-    def get_segmented_mels(self, spec, start_frame):
+    def get_segmented_mels(self, spec, start_frame, fps: float):
         mels = []
         assert self.syncnet_T == 5 or self.syncnet_T == 16 
         start_frame_num = self.get_frame_id(start_frame) + 1 # 0-indexing ---> 1-indexing
         if start_frame_num - 2 < 0: return None
         for i in range(start_frame_num, start_frame_num + self.syncnet_T):
-            m = self.crop_audio_window(spec, i - 2)
+            m = self.crop_audio_window(spec, i - 2, fps)
             if m.shape[0] != self.syncnet_mel_step_size:
                 return None
             mels.append(m.T)
@@ -111,6 +111,14 @@ class Wav2LipDataset(object):
             img_names = list(glob(join(vidname, '*.jpg')))
             if len(img_names) <= self.max_multiplier[self.syncnet_T] * self.syncnet_T:
                 continue
+            
+            video_filename = os.path.basename(vidname) + ".mp4"
+            video_path = os.path.join(vidname, video_filename)
+            if os.path.exists(video_path):
+                probe = ffmpeg.probe(video_path)["streams"][0] 
+                fps = float(probe['r_frame_rate'].split('/')[0]) / float(probe['r_frame_rate'].split('/')[1])
+            else:
+                fps = self.hparams.fps
             
             img_name = random.choice(img_names)
             wrong_img_name = random.choice(img_names)
@@ -138,12 +146,12 @@ class Wav2LipDataset(object):
             except Exception as e:
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            mel = self.crop_audio_window(orig_mel.copy(), img_name, fps)
             
             if (mel.shape[0] != self.syncnet_mel_step_size):
                 continue
 
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name, fps)
             if indiv_mels is None: continue
 
             window = self.prepare_window(window)

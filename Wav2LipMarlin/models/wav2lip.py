@@ -402,8 +402,9 @@ class MARLIN_Encoder_decorator(nn.Module):
             reference_f_map = reference_f_map_avg_expanded 
             feat = torch.cat([masked_f_map, reference_f_map], dim=-1)
             batch_size = feat.size(0)
-            feat = feat.reshape(batch_size, 8, 14, 14, -1)
-            feat = feat.view(-1, feat.size(2), feat.size(3), feat.size(4)) # Reshape to B*T, H, W, C
+            feat = feat.reshape(batch_size, 8, 14, 14, -1).contiguous()
+            T = feat.shape[1]
+            feat = feat.view(batch_size*T, feat.size(2), feat.size(3), feat.size(4)) # Reshape to B*T, H, W, C
             feat = self.channel_align_convs[i](feat, batch_size) 
             feats.append(feat)
             masked_feats.pop()
