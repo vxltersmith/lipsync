@@ -132,11 +132,10 @@ def main():
     )
     checkpoint_callbacks.append(checkpoint_callback)
     
-    
+    devices = args.devices
     accelerator = args.accelerator
     if accelerator == 'gpu':
-        #strategy = "ddp_find_unused_parameters_true"
-        strategy = 'auto'
+        strategy = "ddp_find_unused_parameters_true" if devices > 1 else 'auto'
         devices = args.devices
         torch.compile(model.model)
     else:
