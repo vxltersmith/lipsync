@@ -141,7 +141,7 @@ class Wav2LipModel(LightningModule):
 
         syncnet_wt = self.config.syncnet_wt
         if syncnet_wt > 0.:
-            sync_loss = self.get_sync_loss(mel, g)
+            sync_loss = self.sliding_window_loss(mel, g)
         else:
             sync_loss = 0. 
 
@@ -149,7 +149,7 @@ class Wav2LipModel(LightningModule):
 
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
 
-        if self.global_step % self.config.checkpoint_interval == 0:
+        if self.global_rank == 0 and self.global_step % self.config.checkpoint_interval == 0:
             save_sample_videos(x, g, gt, self.global_step, self.samples_dir)
             save_sample_images(x, g, gt, self.global_step, self.samples_dir)
 
