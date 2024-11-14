@@ -1,6 +1,6 @@
 from Wav2LipMarlin.models.wav2lip import Wav2Lip as Wav2Lip_Original
 from Wav2LipMarlin.models.wav2lip import Wav2Lip_Marlin
-from Wav2LipMarlin.utils import save_sample_videos, save_sample_images
+from Wav2LipMarlin.utils import save_sample_gifs, save_sample_images
 from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
@@ -12,10 +12,10 @@ def _load(checkpoint_path, device):
     checkpoint = torch.load(checkpoint_path, map_location=device)  # or 'cuda' for GPU
     return checkpoint
 
-class Wav2LipModel(LightningModule):
+class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
-            wav2lip_type='marlin', loss_type='bce', scheduler = False):
-        super(Wav2LipModel, self).__init__()
+            wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1):
+        super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
         self.syncnet_mel_step_size = syncnet_mel_step_size
@@ -36,15 +36,9 @@ class Wav2LipModel(LightningModule):
             self.model = Wav2Lip_Original()
         else:
             raise ValueError(f"Unknown model type: {wav2lip_type}")
-        self.wav2lip_type = wav2lip_type
         
-        if loss_type == 'bce':
-            self.loss_fn = nn.BCELoss()
-        elif loss_type == 'cosine_embedding':
-            self.loss_fn = nn.CosineEmbeddingLoss(0.0)
-        else:
-            raise ValueError(f"Unknown loss type: {loss_type}")
-        self.loss_type = loss_type
+        self.wav2lip_type = wav2lip_type
+        self.sync_offset_frames = sync_offset_frames
         
     def setup(self, stage=None):
         def load_checkpoint(path):
@@ -86,7 +80,7 @@ class Wav2LipModel(LightningModule):
 
     def sliding_window_loss(self, mel, g):
         """
-        mel: full mel-spectrogram of the original clip
+        mel: concatenated slices of original mel with length mel-T and shape [B, syncnet_T, 1, 80, mel_T]
         g: a generated frames and croped lower half of faces
         
         output: averaged sync_loss over the temporal window longer that syncnet_T
@@ -95,24 +89,48 @@ class Wav2LipModel(LightningModule):
         
         batch_size = g.size(0)
         temporal_size = self.syncnet_T  # Temporal window size (T)
+        frame_T= g.size(2)
         frame_height = g.size(3)  # Height of the frame
         frame_width = g.size(4)   # Width of the frame
         
-        g = g[:, :, :, g.size(3)//2:]
+        syncnet_frame_height = frame_height // 2 # needed to get a lower half of face crop
+        
+        g = g[:, :, :, syncnet_frame_height:]
         # Sliding window approach (to make it fit model's expected input)
         losses = []
         # Adjust T2 (current temporal size) to T (desired temporal size)
-        for start_idx in range(0, g.size(2) - temporal_size + 1, temporal_size):  # Sliding across time dimension
+        for start_idx in range(0, frame_T - temporal_size, temporal_size):  # Sliding across time dimension
             # Select a slice of T frames (of size temporal_size)
-            window_g = g[:, :, start_idx:start_idx + temporal_size, :, :]  # Shape B, C, T, H, W
+            video_window_g = g[:, :, start_idx:start_idx + temporal_size, :, :]  # Shape B, C, T, H, W
             # Temporal concatenation: Convert from (B, C, T, H, W) to (B, C*T, H, W)
-            window_g = torch.cat([window_g[:, :, i] for i in range(temporal_size)], dim=1)  # B, C*T, H, W
+            video_window_g = video_window_g.reshape(batch_size, 3 * temporal_size, syncnet_frame_height, frame_width)  # B, C*T, H, W
+            
+            #Select correspinding mel-spec slice of mel-T length
+            # In dataloader mels aligned with current_frame - 2, so for a current window we get full slice shifted to the right
+            mel_window = mel[:, start_idx+self.sync_offset_frames , :, :]
+            
             # For each temporal window, compute the sync loss
-            a, v = syncnet_model(mel, window_g)
-            # We want the ground truth label to be 1 for positive pairs
-            y = torch.ones(batch_size, 1).float().to(self.device)
+            a, v = syncnet_model(mel_window, video_window_g)
             # Calculate the cosine loss for this window
-            loss = self.cosine_loss(a, v, y)
+            loss = (1 - nn.functional.cosine_similarity(a, v)).mean()
+            losses.append(loss)
+        
+        # To process last chunk
+        if frame_T % temporal_size != 0: 
+            start_idx = frame_T - temporal_size
+            # Select a slice of T frames (of size temporal_size)
+            video_window_g = g[:, :, start_idx:start_idx + temporal_size, :, :]  # Shape B, C, T, H, W
+            # Temporal concatenation: Convert from (B, C, T, H, W) to (B, C*T, H, W)
+            video_window_g = video_window_g.reshape(batch_size, 3 * temporal_size, syncnet_frame_height, frame_width)  # B, C*T, H, W
+            
+            #Select correspinding mel-spec slice of mel-T length
+            # In dataloader mels aligned with current_frame - 2, so for a current window we get full slice shifted to the right
+            mel_window = mel[:, start_idx+self.sync_offset_frames, :, :]
+            
+            # For each temporal window, compute the sync loss
+            a, v = syncnet_model(mel_window, video_window_g)
+            # Calculate the cosine loss for this window
+            loss = (1 - nn.functional.cosine_similarity(a, v)).mean()
             losses.append(loss)
         # Average the losses over all windows
         avg_loss = torch.mean(torch.stack(losses))
@@ -141,7 +159,7 @@ class Wav2LipModel(LightningModule):
 
         syncnet_wt = self.config.syncnet_wt
         if syncnet_wt > 0.:
-            sync_loss = self.sliding_window_loss(mel, g)
+            sync_loss = self.sliding_window_loss(indiv_mels, g)
         else:
             sync_loss = 0. 
 
@@ -150,8 +168,7 @@ class Wav2LipModel(LightningModule):
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
 
         if self.global_rank == 0 and self.global_step % self.config.checkpoint_interval == 0:
-            save_sample_videos(x, g, gt, self.global_step, self.samples_dir)
-            save_sample_images(x, g, gt, self.global_step, self.samples_dir)
+            save_sample_gifs(x, g, gt, self.global_step, self.samples_dir)
 
         # Logging
         self.log('L1_loss_train', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
@@ -167,12 +184,17 @@ class Wav2LipModel(LightningModule):
 
         g = self.model(indiv_mels, x)
 
-        sync_loss = self.sliding_window_loss(mel, g)
+        sync_loss = self.sliding_window_loss(indiv_mels, g)
         l1loss, g = self.get_mse_loss(g, gt)
 
         syncnet_wt = self.config.syncnet_wt
         loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
         
+        if batch_idx == 0 and self.global_rank == 0:
+            import os
+            samples_val_path = os.path.join(self.samples_dir, 'eval')
+            save_sample_gifs(x, g, gt, self.global_step, samples_val_path)
+       
         # Logging
         self.log('L1_val', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.log('Sync_Loss_val', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)

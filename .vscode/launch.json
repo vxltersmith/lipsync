@@ -20,7 +20,8 @@
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "./checkpoints2/", "--checkpoint_path", "./cos_emb_lossv2/checkpoint_epoch=51_step=49868.ckpt"]
             
             // train wav2lip args
-            "args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v3", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_v3/sl_checkpoint_epoch=03_step=23004.ckpt"],
+            //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v3", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_v3/sl_checkpoint_epoch=03_step=23004.ckpt"],
+            "args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "debug_syncloss", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_syncloss/l1_tr_checkpoint_epoch=02_step=8595.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v2", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "2"],          
 
             // evaluate syncnet args
