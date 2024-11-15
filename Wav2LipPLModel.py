@@ -40,7 +40,12 @@ class Wav2LipPLModel(LightningModule):
         self.wav2lip_type = wav2lip_type
         self.sync_offset_frames = sync_offset_frames
         
+        self.identity_style_loss_fn = None
+        self.loaded = False
+        
     def setup(self, stage=None):
+        if self.loaded: return
+        
         def load_checkpoint(path):
             print("Load checkpoint from: {}".format(path))
             checkpoint = _load(path, self.device)
@@ -53,9 +58,13 @@ class Wav2LipPLModel(LightningModule):
                 self.model.load_state_dict(self.checkpoint["state_dict"])
             else:
                 raise NotImplementedError()
+            self.loaded = True
                 
         self.logloss = nn.BCELoss()
         self.recon_loss = nn.L1Loss()
+        
+    def set_identity_style_loss(self, identity_style_loss_fn):
+        self.identity_style_loss_fn = identity_style_loss_fn
 
     def forward(self, mel, x_full):
         # Forward pass through the SyncNet model
@@ -164,16 +173,28 @@ class Wav2LipPLModel(LightningModule):
             sync_loss = 0. 
 
         l1loss, g = self.get_mse_loss(g, gt)
-
-        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
-
         if self.global_rank == 0 and self.global_step % self.config.checkpoint_interval == 0:
             save_sample_gifs(x, g, gt, self.global_step, self.samples_dir)
+        
+        if self.identity_style_loss_fn is not None:
+            batch_size, C, T, H, W = g.shape
+            g = g.transpose(2,1).contiguous().reshape(batch_size*T, C, H, W)
+            gt = gt.transpose(2,1).contiguous().reshape(batch_size*T, C, H, W)
+            identity_syle_loss = self.identity_style_loss_fn(g, gt)
+            is_weight = self.config.identity_style_wt
+        else:
+            is_weight = 0
+
+        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
+        loss = is_weight * identity_syle_loss + (1-is_weight) * loss
+
 
         # Logging
         self.log('L1_loss_train', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         if syncnet_wt > 0.:
             self.log('Sync_Loss_train', sync_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        if is_weight > 0:
+            self.log('Identity_Style_Loss_train', identity_syle_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         
         self.log('Total_loss_train', loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
@@ -186,18 +207,31 @@ class Wav2LipPLModel(LightningModule):
 
         sync_loss = self.sliding_window_loss(indiv_mels, g)
         l1loss, g = self.get_mse_loss(g, gt)
-
-        syncnet_wt = self.config.syncnet_wt
-        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
         
         if batch_idx == 0 and self.global_rank == 0:
             import os
             samples_val_path = os.path.join(self.samples_dir, 'eval')
             save_sample_gifs(x, g, gt, self.global_step, samples_val_path)
+        
+        if self.identity_style_loss_fn is not None:
+            batch_size, C, T, H, W = g.shape
+            g = g.transpose(2,1).contiguous().reshape(batch_size*T, C, H, W)
+            gt = gt.transpose(2,1).contiguous().reshape(batch_size*T, C, H, W)
+            identity_syle_loss = self.identity_style_loss_fn(g, gt)
+            is_weight = self.config.identity_style_wt
+        else:
+            is_weight = 0
+        
+        syncnet_wt = self.config.syncnet_wt
+        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
+        if is_weight > 0:
+            loss = is_weight * identity_syle_loss + (1-is_weight) * loss
        
         # Logging
         self.log('L1_val', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.log('Sync_Loss_val', sync_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        if is_weight > 0:
+            self.log('Identity_Style_Loss_val', identity_syle_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.log('Total_loss_val', loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return sync_loss
 

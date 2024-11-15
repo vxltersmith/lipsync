@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--eval_every', help='Eval every N epochs', default=None, type=int)
     parser.add_argument('--num_workers', help='Device ids', default=None, type=int)
     parser.add_argument('--sync_weight', help='Sync loss weight', default=None, type=float)
+    parser.add_argument('--is_weight', help='Identity-Style loss weight', default=None, type=float)
     parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
@@ -97,6 +98,14 @@ def main():
     if args.sync_weight is not None:   
         hparams.set_hparam('syncnet_wt', args.sync_weight)
     
+    if args.is_weight is not None:
+        hparams.set_hparam('identity_style_wt', args.is_weight)
+        from Wav2LipMarlin.loss.identity_style_loss import IdentityStyleLoss
+        identity_style_loss = IdentityStyleLoss()
+    else:
+        hparams.set_hparam('identity_style_wt', 0.)
+        identity_style_loss = None
+    
     # syncnet_T_m = 5
     # syncnet_mel_step_size_m = 16
     train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size)
@@ -114,7 +123,8 @@ def main():
             syncnet_type = syncnet_type)
     syncnet_pl_model.setup() # pre-load model
     # Model
-    model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, wav2lip_type=wav2lip_type)
+    model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, 
+        wav2lip_type=wav2lip_type)
 
     # Checkpointing callbacks
     checkpoint_callbacks = []
@@ -142,9 +152,14 @@ def main():
         strategy = "ddp_find_unused_parameters_true" if devices > 1 else 'auto'
         devices = args.devices
         torch.compile(model.model)
+        torch.compile(syncnet_pl_model.model)
     else:
         strategy = 'auto'
         devices = None
+        
+    if identity_style_loss is not None:
+        model.setup()
+        model.set_identity_style_loss(identity_style_loss)
     
     # Trainer setup
     trainer = Trainer(

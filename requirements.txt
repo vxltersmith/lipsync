@@ -2,6 +2,7 @@ ffmpeg
 pytorch-lightning==2.3
 opencv-python-headless==4.5.5.64
 torchvision
+facenet-pytorch
 marlin_pytorch==0.3.4
 opencv-python==4.5.5.64
 pillow
