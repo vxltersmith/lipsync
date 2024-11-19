@@ -11,3 +11,4 @@ logs/
 *.txt
 filelists/main/*
 samples/*
+**.gif

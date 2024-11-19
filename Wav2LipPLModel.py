@@ -14,7 +14,8 @@ def _load(checkpoint_path, device):
 
 class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
-            wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1):
+            wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1, infer_only = False,
+            dropout = 0.05, spectral_scale = True, mean_context = False):
         super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -22,16 +23,18 @@ class Wav2LipPLModel(LightningModule):
         self.checkpoint_path = checkpoint_path
         self.scheduler = scheduler
         
-        assert syncnet_pl_model is not None # it's important to have it
-        self.syncnet_pl_model = syncnet_pl_model
-        for p in syncnet_pl_model.model.parameters(): # Excluding syncnet weights from autograd
-            p.requires_grad = False
+        self.infer_only = infer_only
+        if not infer_only:
+            assert syncnet_pl_model is not None # it's important to have it
+            self.syncnet_pl_model = syncnet_pl_model
+            for p in syncnet_pl_model.model.parameters(): # Excluding syncnet weights from autograd
+                p.requires_grad = False
         
         self.checkpoint = None
         self.samples_dir = samples_dir
                
         if wav2lip_type == 'marlin':
-            self.model = Wav2Lip_Marlin()  # Redesigned Wav2Lip model with MARLIN encoder
+            self.model = Wav2Lip_Marlin(dropout=dropout, spectral_scaling=spectral_scale, mean_context = mean_context)  # Redesigned Wav2Lip model with MARLIN encoder
         elif wav2lip_type == 'original':
             self.model = Wav2Lip_Original()
         else:
@@ -52,6 +55,15 @@ class Wav2LipPLModel(LightningModule):
             return checkpoint
         if self.checkpoint_path is not None:
             self.checkpoint = load_checkpoint(self.checkpoint_path)
+            
+            if self.infer_only:
+                # delete syncnet keys from checkpoint if any
+                for _ in [_ for _ in self.checkpoint['state_dict'] if 'syncnet_pl_model' in _]:
+                    del self.checkpoint['state_dict'][_]
+            # identity_style_loss_fn
+            for _ in [_ for _ in self.checkpoint['state_dict'] if 'identity_style_loss_fn' in _]:
+                del self.checkpoint['state_dict'][_]
+            
             if self.wav2lip_type == "marlin":
                 self.load_state_dict(self.checkpoint["state_dict"])
             elif self.wav2lip_type == "original":
@@ -185,9 +197,7 @@ class Wav2LipPLModel(LightningModule):
         else:
             is_weight = 0
 
-        loss = syncnet_wt * sync_loss + (1 - syncnet_wt) * l1loss
-        loss = is_weight * identity_syle_loss + (1-is_weight) * loss
-
+        loss =  (1 - syncnet_wt - is_weight) * l1loss + syncnet_wt * sync_loss + is_weight * identity_syle_loss
 
         # Logging
         self.log('L1_loss_train', l1loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
@@ -249,8 +259,16 @@ class Wav2LipPLModel(LightningModule):
     
     def predict_step(self, batch, batch_idx):
         # Validation loop logic
-        x, mel, y = batch
-        return x
+        x, indiv_mels = batch
+        with torch.no_grad():
+            g = self.model(indiv_mels, x)
+        
+        batch_size, C, T, H, W = g.shape #[ B, C, T, H, W]
+        g = g.permute(0, 2, 1, 3, 4).contiguous()  # [batch_size, T, C, H, W]
+        g = F.interpolate(g.view(-1, C, H, W), size=x.shape[3:], mode='bilinear', align_corners=False)
+        g = g.view(batch_size, T, C, *x.shape[3:]).permute(0, 2, 1, 3, 4)  # [batch_size, C, T, new_H, new_W]
+        
+        return g
 
     def configure_optimizers(self):
         # Optimizer configuration

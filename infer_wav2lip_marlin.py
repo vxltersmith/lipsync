@@ -1,0 +1,212 @@
+import ffmpeg
+import torch
+
+from Wav2LipPLModel import Wav2LipPLModel
+from Wav2LipMarlin.hparams import hparams
+from overlay_video_syncnet import save_wav, combine_video_audio_ffmpeg
+import Wav2LipMarlin.face_detection as face_detection
+
+from Wav2LipMarlin.utils import save_batch_gifs
+import numpy as np
+import cv2
+
+def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
+    import Wav2LipMarlin.datasets.audio as audio
+    wav = audio.load_wav(audio_path, 16000)
+    mel = audio.melspectrogram(wav, config)
+    print(mel.shape)
+
+    if np.isnan(mel.reshape(-1)).sum() > 0:
+        raise ValueError('Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
+
+    mel_chunks = []
+    mel_idx_multiplier = 80./fps 
+    i = 0
+    while 1:
+        start_idx = int(i * mel_idx_multiplier)
+        if start_idx + mel_step_size > len(mel[0]):
+            mel_chunks.append(mel[:, len(mel[0]) - mel_step_size:])
+            break
+        mel_chunks.append(mel[:, start_idx : start_idx + mel_step_size])
+        i += 1
+    print("Length of mel chunks: {}".format(len(mel_chunks)))
+    return mel, wav, mel_chunks
+
+def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0,0,0),
+        target_size = 224):
+    face_detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
+        flip_input=False, device=device)
+
+    batch_size = face_det_batch_size
+    n_frames = len(video_frames)
+
+    batches = [video_frames[i:i + batch_size] for i in range(0, n_frames, batch_size)]
+    i = -1
+    cropped_video_frames = []
+    for bacth_idx, fb in enumerate(batches):
+        preds = face_detector.get_detections_for_batch(np.asarray(fb))
+        for element_idx, bbox in enumerate(preds):
+            i += 1
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            frame = fb[element_idx][y1:y2, x1:x2]
+            cropped_video_frames.append(frame)
+            continue
+        continue
+    
+    assert len(cropped_video_frames) == len(video_frames)
+    
+    cropped_video_frames = [cv2.resize(_, (target_size, target_size)) for _ in cropped_video_frames]
+    cropped_video_frames = np.array(cropped_video_frames)
+    cropped_video_frames = torch.tensor(cropped_video_frames).permute(0, 3, 1, 2)
+    cropped_video_frames = cropped_video_frames / 255
+    return cropped_video_frames
+
+def save_video(frames, video_path, fps=25):
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    width, height = frames[0].shape[:2]
+    out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+    for frame in frames:
+        frame = frame.astype(np.uint8)
+        out.write(frame)
+    out.release()
+    print(f"Annotated video saved to {video_path}")
+
+def get_video_frames(video_path:str, resize_factor=1, rotate=False, crop = (0,-1,0,-1)):
+    video_stream = cv2.VideoCapture(video_path)
+    fps = video_stream.get(cv2.CAP_PROP_FPS)
+    print('Reading video frames...')
+
+    full_frames = []
+    while 1:
+        still_reading, frame = video_stream.read()
+        if not still_reading:
+            video_stream.release()
+            break
+        if resize_factor > 1:
+            frame = cv2.resize(frame, (frame.shape[1]//resize_factor, frame.shape[0]//resize_factor))
+
+        if rotate:
+            frame = cv2.rotate(frame, cv2.cv2.ROTATE_90_CLOCKWISE)
+
+        y1, y2, x1, x2 = crop
+        if x2 == -1: x2 = frame.shape[1]
+        if y2 == -1: y2 = frame.shape[0]
+
+        frame = frame[y1:y2, x1:x2]
+
+        full_frames.append(frame)
+    return full_frames
+
+def main():
+    # Argument Parsing
+    import argparse
+    parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
+    parser.add_argument("--source_video_path", help="Path to source video file to edit", required=True)
+    parser.add_argument("--target_video_path", help="Path to output file", default='./output.mp4', type=str)
+    parser.add_argument("--audio_path", help="Path audio to replace original", required=True)
+    parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', required=True, type=str)
+    parser.add_argument('--wav2lip_type', 
+        help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
+        default="marlin", type=str)
+    
+    args = parser.parse_args()
+    
+    source_video_path = args.source_video_path
+    target_video_path = args.target_video_path
+    audio_path = args.audio_path
+    
+    debug_frames = False
+    
+    if args.wav2lip_type == 'marlin_full':
+        # Params for Syncnet-Marlin and Wav2Lip-Marlin
+        syncnet_T = 5
+        syncnet_T_m = int(3.2 * syncnet_T)
+        
+        syncnet_mel_step_size = 16
+        syncnet_mel_step_size_m = int(syncnet_mel_step_size * 3.18)
+
+        # both are MARLIN-based
+        syncnet_mel_step_size = syncnet_mel_step_size_m
+        syncnet_T = syncnet_T_m
+        
+        wav2lip_type='marlin'
+        hparams.img_size = 224
+    elif args.wav2lip_type == 'original':
+        # Params for Syncnet-orginal and Wav2Lip-original
+        syncnet_T = 5
+        syncnet_T_m = syncnet_T
+        
+        syncnet_mel_step_size = 16
+        syncnet_mel_step_size_m = syncnet_mel_step_size
+        
+        wav2lip_type = 'original'
+        hparams.img_size = 96
+    elif args.wav2lip_type == 'marlin':
+        # Params for Syncnet-orginal and Wav2Lip-Marlin
+        syncnet_T = 5
+        syncnet_mel_step_size = 16
+        
+        syncnet_T_m = int(3.2 * syncnet_T)       
+        syncnet_mel_step_size_m = int(syncnet_mel_step_size * 3.18)
+        
+        wav2lip_type = 'marlin'
+        hparams.img_size = 224
+        
+    model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, None, args.checkpoint_path, 
+        wav2lip_type=wav2lip_type, infer_only=True, dropout=0.05, spectral_scale=True, mean_context=False)
+    
+    model.setup()
+    model.eval()
+    model.cuda()
+
+    probe = ffmpeg.probe(source_video_path)["streams"][0]
+    fps = float(probe['r_frame_rate'].split('/')[0]) / float(probe['r_frame_rate'].split('/')[1])
+    hparams.set_hparam('fps', fps)
+    
+    video_frames = get_video_frames(video_path = source_video_path)
+    cropped_video_frames = face_detect(video_frames)
+    cropped_video_frames = cropped_video_frames.cuda()
+    
+    mel_full, wav, mel_chunks = get_mels(audio_path=audio_path, mel_step_size=syncnet_mel_step_size, fps = fps, config=hparams)
+    mel_chunks = np.array(mel_chunks)
+#    mel = mel.cuda()
+    
+    chunk_outputs = []
+    for i in range(0, mel_chunks.shape[0], syncnet_T_m):
+        masked_frames = cropped_video_frames[i:i+syncnet_T_m]
+        reference_frames = masked_frames.clone()  
+        masked_frames[:,:,masked_frames.shape[3]//2:,:] = 0.
+        input_frames = torch.cat([masked_frames, reference_frames], dim=1)
+        input_frames = input_frames.transpose(1, 0).unsqueeze(0)
+        
+        indiv_mel = torch.tensor(mel_chunks[i:i+syncnet_T_m])
+        if indiv_mel.shape[0] < syncnet_T_m: continue
+        indiv_mel = indiv_mel.unsqueeze(0).unsqueeze(2).float()
+        
+        g = model.predict_step((input_frames.cuda(), indiv_mel.cuda()), i)
+        
+        # Convert batch to frames 
+        chunk_output = g.squeeze(0).transpose(1, 0).permute(0, 2, 3, 1).cpu()
+        for frame in chunk_output.split(1):
+            frame = frame.squeeze(0)
+            frame = frame * 255
+            frame = frame.int().numpy()
+            chunk_outputs.append(frame)
+        
+        if debug_frames:
+            save_batch_gifs(g, i, './output', fps, 'generated')
+        continue
+    
+    print('Saving to: ' + target_video_path)
+    
+    save_video(chunk_outputs, target_video_path, fps)
+    wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
+    temp_audio_path = save_wav(wav, hparams.sample_rate)
+    combine_video_audio_ffmpeg(target_video_path,  temp_audio_path, "final_video_with_audio.mp4")
+    return
+    
+    
+if __name__ == "__main__":
+    main()

@@ -21,7 +21,7 @@
             
             // train wav2lip args
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v3", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_v3/sl_checkpoint_epoch=03_step=23004.ckpt"],
-            "args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "debug_syncloss", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--sync_weight", "5e-4", "--is_weight", "1e-2", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_syncloss/l1_tr_checkpoint_epoch=16_step=48705.ckpt"],
+            //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "debug_syncloss", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--sync_weight", "0.03", "--is_weight", "0.07", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_train_v0/l1_tr_checkpoint_epoch=03_step=11460.ckpt"],
             //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "debug_syncloss", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_syncloss/l1_tr_checkpoint_epoch=02_step=8595.ckpt"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v2", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "2"],          
 
@@ -35,6 +35,10 @@
             //"args": ["--video_path", "/data/CelebVHQ/35666/DUB3sMP5shA_2/DUB3sMP5shA_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
             //"args": ["--video_path", "/data/CelebVHQ/35666/__lRwnjxeCg_2/__lRwnjxeCg_2.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
             //"args": ["--video_path", "/data/LRS2/mvlrs_v1/main/5892739798226746824/00002.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
+            
+            // replace audio in video
+            "args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_reference_all_losses_v0/l1_tr_checkpoint_epoch=39_step=114600.ckpt"] 
+            //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_syncloss/l1_tr_checkpoint_epoch=21_step=63030.ckpt"] 
         }
     ]
 }

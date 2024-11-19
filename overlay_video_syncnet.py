@@ -14,15 +14,16 @@ import Wav2LipMarlin.face_detection as face_detection
 
 
 # Utility function to read video frames
-def load_video_frames(video_path, img_size=96):
+def load_video_frames(video_path, img_size=(96, 96), cvt_convert = False):
     cap = cv2.VideoCapture(video_path)
     frames = []
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.resize(frame, (img_size, img_size))  # Resize to model input size
-        frame = frame[:, :, ::-1]  # Convert BGR (OpenCV) to RGB
+        frame = cv2.resize(frame, (img_size[0], img_size[1]))  # Resize to model input size
+        if cvt_convert:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frames.append(frame)
     cap.release()
     video_tensor = torch.tensor(np.array(frames)).permute(3, 0, 1, 2).float() / 255.0  # Shape: C, T, H, W

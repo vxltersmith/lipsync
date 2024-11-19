@@ -148,58 +148,59 @@ from marlin_pytorch import Marlin
 class Wav2Lip_Marlin(nn.Module):
     def __init__(self, backbone = "marlin_vit_base_ytf", 
             marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt', 
-            marlin_out_dim=768, external_pooler = True):
+            marlin_out_dim=768, external_pooler = True, dropout = 0.05, spectral_scaling = True, 
+            mean_context = False):
         super(Wav2Lip_Marlin, self).__init__()
         # Modified MARLIN encoder; changed from original
-        self.face_encoder = MARLIN_Encoder_decorator(backbone, marlin_ckpt)
+        self.face_encoder = MARLIN_Encoder_decorator(backbone, marlin_ckpt, dropout = dropout, mean_context = mean_context)
 
         self.audio_encoder = nn.Sequential(
-            Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
-            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(1, 32, kernel_size=3, stride=1, padding=1, dropout=0),
+            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True, dropout=0),
+            Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True, dropout=0),
 
-            Conv2d(32, 64, kernel_size=3, stride=(3, 1), padding=1),
-            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(32, 64, kernel_size=3, stride=(3, 1), padding=1, dropout=0),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True, dropout=0),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True, dropout=dropout),
 
-            Conv2d(64, 128, kernel_size=3, stride=3, padding=1),
-            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(64, 128, kernel_size=3, stride=3, padding=1, dropout=dropout),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True, dropout=dropout),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True, dropout=dropout),
 
-            Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1),
-            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+            Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1, dropout=dropout),
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True, dropout=dropout),
 
-            Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
-            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+            Conv2d(256, 512, kernel_size=3, stride=1, padding=0, dropout=dropout),
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0, dropout=dropout),
         )
 
         self.face_decoder_blocks = nn.ModuleList([
             nn.Sequential(Conv2d(512, 512, kernel_size=1, stride=1, padding=0),),
 
             nn.Sequential(Conv2dTranspose(1024, 512, kernel_size=3, stride=1, padding=0), #3,3
-            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),),
 
             nn.Sequential(Conv2dTranspose(1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
-            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),), # 6, 6
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),), # 6, 6
 
             nn.Sequential(Conv2dTranspose(768, 384, kernel_size=3, stride=2, padding=1, output_padding=1),
-            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True),), # 12, 12
+            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),
+            Conv2d(384, 384, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),), # 12, 12
 
             nn.Sequential(Conv2dTranspose(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),), # 24, 24
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),
+            Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),), # 24, 24
 
             nn.Sequential(Conv2dTranspose(320, 128, kernel_size=3, stride=2, padding=1, output_padding=1), 
-            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),), # 48, 48
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),
+            Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),), # 48, 48
 
             nn.Sequential(Conv2dTranspose(160, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),),]) # 96,96
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),
+            Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True, dropout=0, spectral_scaling=spectral_scaling),),]) # 96,96
 
-        self.output_block = nn.Sequential(Conv2d(80, 32, kernel_size=3, stride=1, padding=1),
+        self.output_block = nn.Sequential(Conv2d(80, 32, kernel_size=3, stride=1, padding=1, dropout=0, spectral_scaling=spectral_scaling),
             nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0),
             nn.Sigmoid()) 
 
@@ -247,7 +248,7 @@ class Wav2Lip_Marlin(nn.Module):
         return outputs
 
 class TemporalExpansionLayer(nn.Module):
-    def __init__(self, input_dims, intermediate_dims, output_dims):
+    def __init__(self, input_dims, intermediate_dims, output_dims, dropout=0.1):
         super(TemporalExpansionLayer, self).__init__()
         # Initial block processes 8 frames, then we upsample to 16
         self.initial_conv = nn.Conv3d(input_dims, intermediate_dims, kernel_size=3, padding=1)  # Example 3D conv to process temporal data
@@ -255,23 +256,26 @@ class TemporalExpansionLayer(nn.Module):
         self.temporal_upsample = nn.ConvTranspose3d(intermediate_dims, 
             intermediate_dims, kernel_size=(2, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1)
         )
+        self.dropout = nn.Dropout3d(p=dropout)
         self.conv1 = nn.Conv3d(intermediate_dims, output_dims, kernel_size=3, padding=1)
         self.activation = nn.GELU()
 
     def forward(self, x):
         # x is expected to have shape [batch_size, channels, frames, height, width]
         x = self.initial_conv(x)              # Process initial 8-frame input
+        x = self.dropout(x)
         # Temporal Upsampling: Upsample from 8 to 16 frames
         x = self.temporal_upsample(x)        # Upsamples temporal dim from 8 to 16
         x = self.activation(self.conv1(x))    # Follow up with a convolution for refinement
         return x
 
 class MarlinFeatureAdapter(nn.Module):
-    def __init__(self, in_channels, out_channels, interpolation_op=None):
+    def __init__(self, in_channels, out_channels, interpolation_op=None, dropout = 0.05):
         super(MarlinFeatureAdapter, self).__init__()
                
         # Fusion convolution layers
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.dropout = nn.Dropout(p=dropout)
         # Define normalization and activation
         self.layer_norm = nn.LayerNorm(out_channels)
         self.activation = nn.GELU()
@@ -283,7 +287,8 @@ class MarlinFeatureAdapter(nn.Module):
         self.temporal_expansion_layer = TemporalExpansionLayer(
             input_dims=out_channels, 
             intermediate_dims=out_channels, 
-            output_dims=out_channels
+            output_dims=out_channels,
+            dropout = dropout
         )
 
     def forward(self, x , batch_size:int):
@@ -298,6 +303,7 @@ class MarlinFeatureAdapter(nn.Module):
         
         # conv-projection to fuse hiddens
         x = self.conv(x)  # [B*T, out_channels, H, W]
+        x = self.dropout(x)
         x = x.permute(0, 2, 3, 1)  # [B*T, H, W, out_channels] for LayerNorm
         x = self.layer_norm(x)  # Normalize across channels
         x = x.permute(0, 3, 1, 2)  # Back to [B*T, out_channels, H, W]
@@ -330,23 +336,26 @@ class MARLIN_Encoder_decorator(nn.Module):
             backbone, 
             marlin_ckpt, 
             seq_mean_pool = False,
-            marlin_out_dims = 768
+            marlin_out_dims = 768, 
+            dropout = 0.05,
+            mean_context = False
         ):
         super(MARLIN_Encoder_decorator, self).__init__()
         self.encoder = Marlin.from_file(backbone, marlin_ckpt).encoder
         for p in self.encoder.parameters(): # Excluding syncnet weights from autograd
             p.requires_grad = False
         self.seq_mean_pool = seq_mean_pool
+        self.mean_context = mean_context
         
         # Instantiate the list of align convs with interpolations attached, needed to match original architecture 
         self.channel_align_convs = nn.ModuleList([
-            MarlinFeatureAdapter(marlin_out_dims*2, 512, nn.AdaptiveAvgPool2d((1, 1))),     # 512, 1, 1
-            MarlinFeatureAdapter(marlin_out_dims*2, 512, nn.AdaptiveAvgPool2d((3, 3))),     # 512, 3, 3
-            MarlinFeatureAdapter(marlin_out_dims*2, 256, nn.AdaptiveAvgPool2d((6, 6))),     # 256, 6, 6
-            MarlinFeatureAdapter(marlin_out_dims*2, 128, nn.AdaptiveMaxPool2d((12, 12))),   # 128, 12, 12
-            MarlinFeatureAdapter(marlin_out_dims*2, 64, InterpolationLayer(size=(24, 24), mode = 'bilinear')), # 64, 24, 24
-            MarlinFeatureAdapter(marlin_out_dims*2, 32, InterpolationLayer(size=(48, 48), mode = 'bilinear')), # 32, 48, 48
-            MarlinFeatureAdapter(marlin_out_dims*2, 16, InterpolationLayer(size=(96, 96), mode = 'bilinear'))  # 16, 96, 96
+            MarlinFeatureAdapter(marlin_out_dims*2, 512, nn.AdaptiveAvgPool2d((1, 1)), dropout = dropout),     # 512, 1, 1
+            MarlinFeatureAdapter(marlin_out_dims*2, 512, nn.AdaptiveAvgPool2d((3, 3)), dropout = dropout),     # 512, 3, 3
+            MarlinFeatureAdapter(marlin_out_dims*2, 256, nn.AdaptiveAvgPool2d((6, 6)), dropout = dropout),     # 256, 6, 6
+            MarlinFeatureAdapter(marlin_out_dims*2, 128, nn.AdaptiveMaxPool2d((12, 12)), dropout = dropout),   # 128, 12, 12
+            MarlinFeatureAdapter(marlin_out_dims*2, 64, InterpolationLayer(size=(24, 24), mode = 'bilinear'), dropout = dropout), # 64, 24, 24
+            MarlinFeatureAdapter(marlin_out_dims*2, 32, InterpolationLayer(size=(48, 48), mode = 'bilinear'), dropout = dropout), # 32, 48, 48
+            MarlinFeatureAdapter(marlin_out_dims*2, 16, InterpolationLayer(size=(96, 96), mode = 'bilinear'), dropout = dropout)  # 16, 96, 96
         ])
         
     def extract_features_ae(self, x):
@@ -393,13 +402,19 @@ class MARLIN_Encoder_decorator(nn.Module):
         for i in range(len(masked_feats)):
             masked_f_map = masked_feats[-1]
             reference_f_map = reference_feats[-1]
+            
             # Average reference_f_map over temporal dimension
             reference_f_map_avg = reference_f_map.mean(dim=1, keepdim=True)  # Shape: [B, 1, H, W, C/2]
             reference_f_map_avg = self.encoder.norm(reference_f_map_avg)
             # Expand averaged reference features to match temporal dimension
             reference_f_map_avg_expanded = reference_f_map_avg.expand(-1, masked_f_map.shape[1], -1)  # Shape: [B, T, H, W, C/2]
-            # Concatenate masked_f_map with expanded averaged reference features
-            reference_f_map = reference_f_map_avg_expanded 
+            if not self.mean_context:
+                # Concatenate masked_f_map with expanded averaged reference features
+                reference_f_map = reference_f_map_avg_expanded + reference_f_map
+                reference_f_map = self.encoder.norm(reference_f_map)
+            else:
+                reference_f_map = reference_f_map_avg_expanded
+            
             feat = torch.cat([masked_f_map, reference_f_map], dim=-1)
             batch_size = feat.size(0)
             feat = feat.reshape(batch_size, 8, 14, 14, -1).contiguous()

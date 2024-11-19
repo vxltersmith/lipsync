@@ -50,8 +50,6 @@ def main():
     num_workers = args.num_workers if args.num_workers is not None else hparams.num_workers
     batch_size = args.batch_size if args.batch_size is not None else hparams.batch_size
     eval_every = args.eval_every if args.eval_every is not None else 1
-    limit_val_batches = 1
-    
     eval_steps = 700 # from original Wav2Lip code
     
     if args.seed != -1:

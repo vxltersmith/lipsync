@@ -113,6 +113,51 @@ def save_sample_gifs(x, g, gt, global_step, checkpoint_dir, fps=25, gif_filename
         )
         
         print(f"GIF saved for batch {batch_idx} at {gif_path}")       
+
+def save_batch_gifs(g, global_step, checkpoint_dir, fps=25, gif_filename_prefix='sample_gif'):
+    """
+    Save each batch element as a separate GIF instead of individual image files.
+    
+    Args:
+        x (torch.Tensor): Tensor for reference and input images of shape (B, T, C, H, W).
+        g (torch.Tensor): Tensor for generated images of shape (B, T, C, H, W).
+        gt (torch.Tensor): Tensor for ground truth images of shape (B, T, C, H, W).
+        global_step (int): Global step for naming and organizing files.
+        checkpoint_dir (str): Directory where GIFs will be saved.
+        fps (int): Frames per second for the GIF.
+        gif_filename_prefix (str): Prefix for the GIF file name.
+    """
+    # Convert tensors to numpy arrays and rearrange dimensions
+    g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+
+    # Concatenate references, inputs, generated, and ground truth along width
+    refs, inps = g[..., 3:], g[..., :3]
+    collage = g[0]  # Shape (B, T, H, W, C)
+
+    # Ensure the checkpoint directory exists
+    folder = checkpoint_dir
+    os.makedirs(folder, exist_ok=True)
+
+    # Loop through each batch element and save as a separate GIF
+    #B, T, H, W, C = collage.shape  # B: batch size, T: time steps, H, W: height, width, C: channels
+    duration = int(1000 / fps)  # Duration per frame in milliseconds for the GIF
+
+    # Define GIF path for each batch element
+    gif_path = os.path.join(folder, f"{gif_filename_prefix}_batch{global_step}.gif")
+    T = collage.shape[0]
+    # Collect frames for the GIF
+    frames = [Image.fromarray(cv2.cvtColor(collage[t], cv2.COLOR_BGR2RGB)) for t in range(T)]
+
+    # Save frames as GIF
+    frames[0].save(
+        gif_path, 
+        save_all=True, 
+        append_images=frames[1:], 
+        duration=duration, 
+        loop=0
+    )
+    
+    print(f"GIF saved at {gif_path}")     
         
 import os
 import numpy as np
