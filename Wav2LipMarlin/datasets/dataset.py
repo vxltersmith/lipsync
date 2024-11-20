@@ -164,6 +164,7 @@ class Wav2LipDataset(object):
             x = torch.FloatTensor(x)
             mel = torch.FloatTensor(mel.T).unsqueeze(0)
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
+            #indiv_mels = (indiv_mels / indiv_mels.abs().max(dim=0, keepdim=True)[0].max(dim=-1, keepdim=True)[0])
             y = torch.FloatTensor(y)
             return x, indiv_mels, mel, y
 

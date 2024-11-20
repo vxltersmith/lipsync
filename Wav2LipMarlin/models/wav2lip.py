@@ -288,7 +288,7 @@ class MarlinFeatureAdapter(nn.Module):
             input_dims=out_channels, 
             intermediate_dims=out_channels, 
             output_dims=out_channels,
-            dropout = dropout
+            dropout = dropout * 2
         )
 
     def forward(self, x , batch_size:int):

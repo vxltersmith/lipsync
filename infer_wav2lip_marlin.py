@@ -24,8 +24,9 @@ def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
     i = 0
     while 1:
         start_idx = int(i * mel_idx_multiplier)
+        
         if start_idx + mel_step_size > len(mel[0]):
-            mel_chunks.append(mel[:, len(mel[0]) - mel_step_size:])
+            # mel_chunks.append(mel[:, len(mel[0]) - mel_step_size:])
             break
         mel_chunks.append(mel[:, start_idx : start_idx + mel_step_size])
         i += 1
@@ -36,6 +37,7 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
         target_size = 224):
     face_detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
         flip_input=False, device=device)
+    print('Detecting and  cropping faces on video frames...')
 
     batch_size = face_det_batch_size
     n_frames = len(video_frames)
@@ -117,7 +119,7 @@ def main():
     target_video_path = args.target_video_path
     audio_path = args.audio_path
     
-    debug_frames = False
+    debug_frames = True
     
     if args.wav2lip_type == 'marlin_full':
         # Params for Syncnet-Marlin and Wav2Lip-Marlin
@@ -155,7 +157,7 @@ def main():
         hparams.img_size = 224
         
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, None, args.checkpoint_path, 
-        wav2lip_type=wav2lip_type, infer_only=True, dropout=0.05, spectral_scale=True, mean_context=False)
+        wav2lip_type=wav2lip_type, infer_only=True, dropout=0.0, spectral_scale=False, mean_context=True)
     
     model.setup()
     model.eval()
@@ -171,29 +173,39 @@ def main():
     
     mel_full, wav, mel_chunks = get_mels(audio_path=audio_path, mel_step_size=syncnet_mel_step_size, fps = fps, config=hparams)
     mel_chunks = np.array(mel_chunks)
-#    mel = mel.cuda()
+    mel_chunks = torch.tensor(mel_chunks).float().cuda()  # Ensure mel_chunks are pre-transposed
+    #mel_chunks = mel_chunks / mel_chunks.abs().max()
+
+    n_mels = 80
     
     chunk_outputs = []
-    for i in range(0, mel_chunks.shape[0], syncnet_T_m):
-        masked_frames = cropped_video_frames[i:i+syncnet_T_m]
+    for i in range(0, mel_chunks.shape[0] - syncnet_T_m + 1, syncnet_T_m):
+        # Masked and reference frames
+        masked_frames = cropped_video_frames[i:i+syncnet_T_m].clone()
         reference_frames = masked_frames.clone()  
         masked_frames[:,:,masked_frames.shape[3]//2:,:] = 0.
-        input_frames = torch.cat([masked_frames, reference_frames], dim=1)
-        input_frames = input_frames.transpose(1, 0).unsqueeze(0)
-        
-        indiv_mel = torch.tensor(mel_chunks[i:i+syncnet_T_m])
-        if indiv_mel.shape[0] < syncnet_T_m: continue
-        indiv_mel = indiv_mel.unsqueeze(0).unsqueeze(2).float()
-        
-        g = model.predict_step((input_frames.cuda(), indiv_mel.cuda()), i)
+
+        # Prepare input frames
+        input_frames = torch.cat([masked_frames, reference_frames], dim=1).transpose(1, 0).unsqueeze(0)
+
+        # Prepare indiv_mels
+        indiv_mels = []
+        for j in range(syncnet_T_m):
+            mel_slice = mel_chunks[i + j]  # Transpose to match training
+            if mel_slice.shape != (n_mels, syncnet_mel_step_size):  # Validate shape
+                break
+            indiv_mels.append(mel_slice)
+        if len(indiv_mels) != syncnet_T_m:  # Skip incomplete chunks
+            continue
+
+        indiv_mels = torch.stack(indiv_mels, dim=0).unsqueeze(1).unsqueeze(0).float()  # Shape: (1, syncnet_T, 1, n_mels, syncnet_mel_step_size)
+
+        # Model prediction
+        g = model.predict_step((input_frames.cuda(), indiv_mels.cuda()), i)
         
         # Convert batch to frames 
         chunk_output = g.squeeze(0).transpose(1, 0).permute(0, 2, 3, 1).cpu()
-        for frame in chunk_output.split(1):
-            frame = frame.squeeze(0)
-            frame = frame * 255
-            frame = frame.int().numpy()
-            chunk_outputs.append(frame)
+        chunk_outputs.extend((chunk_output * 255).int().numpy())
         
         if debug_frames:
             save_batch_gifs(g, i, './output', fps, 'generated')

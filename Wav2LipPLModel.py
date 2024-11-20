@@ -15,7 +15,7 @@ def _load(checkpoint_path, device):
 class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
             wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1, infer_only = False,
-            dropout = 0.05, spectral_scale = True, mean_context = False):
+            dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False):
         super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -31,6 +31,7 @@ class Wav2LipPLModel(LightningModule):
                 p.requires_grad = False
         
         self.checkpoint = None
+        self.load_optimizer = load_optimizer
         self.samples_dir = samples_dir
                
         if wav2lip_type == 'marlin':
@@ -283,7 +284,7 @@ class Wav2LipPLModel(LightningModule):
                     optimizer.load_state_dict(optimizer_state)
             return optimizer
         
-        if self.checkpoint is not None:
+        if self.checkpoint is not None and self.load_optimizer:
             optimizer = load_checkpoint(self.checkpoint, optimizer)
         
         if self.scheduler:

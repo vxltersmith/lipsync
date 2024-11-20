@@ -99,7 +99,7 @@ def main():
     if args.is_weight is not None:
         hparams.set_hparam('identity_style_wt', args.is_weight)
         from Wav2LipMarlin.loss.identity_style_loss import IdentityStyleLoss
-        identity_style_loss = IdentityStyleLoss()
+        identity_style_loss = IdentityStyleLoss(identity_layers = [0, 2, 3, 4])
     else:
         hparams.set_hparam('identity_style_wt', 0.)
         identity_style_loss = None
