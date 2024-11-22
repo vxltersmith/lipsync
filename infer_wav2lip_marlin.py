@@ -216,7 +216,7 @@ def main():
     save_video(chunk_outputs, target_video_path, fps)
     wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
     temp_audio_path = save_wav(wav, hparams.sample_rate)
-    combine_video_audio_ffmpeg(target_video_path,  temp_audio_path, "final_video_with_audio.mp4")
+    combine_video_audio_ffmpeg(target_video_path,  temp_audio_path, target_video_path)
     return
     
     

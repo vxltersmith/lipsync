@@ -30,7 +30,7 @@ class InceptionResnetV1WithIntermediates(InceptionResnetV1):
         return final_embedding, [x_in, x1, x2, x3, x4, x5, x6]
 
 class IdentityStyleLoss(torch.nn.Module):
-    def __init__(self, resnet=None, alpha = 0.3, betta = 0.7, style_layers = [1, 2, 3], identity_layers = [3, 4]):
+    def __init__(self, resnet=None, alpha = 0.3, betta = 0.7, style_layers = [1, 2, 3], identity_layers = [0, 4, 5]):
         super(IdentityStyleLoss, self).__init__()
         
         # Load a pre-trained model for feature extraction (e.g., FaceNet)

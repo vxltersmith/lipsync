@@ -16,18 +16,13 @@ from pytorch_lightning import seed_everything
 
 
 
-# Create a TensorBoard logger
-logger = TensorBoardLogger(
-    save_dir='./logs/lightning_logs',   # Directory where logs will be saved
-    name='wav2lip_training',            # Name of the experiment (log folder name)
-)
 
 def main():
     # Argument Parsing
     import argparse
     parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
     parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True)
-    parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', required=True, type=str)
+    parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory, must be a name, will be a subfolder of ./checkpoints/wav2lip_marlin', required=True, type=str)
     parser.add_argument('--syncnet_checkpoint_path', help='pre-trained LipSync expert checkpoint; required for training', required=True, type=str)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
@@ -45,6 +40,12 @@ def main():
         default="marlin", type=str)
     
     args = parser.parse_args()
+    
+    # Create a TensorBoard logger
+    logger = TensorBoardLogger(
+        save_dir='./logs/lightning_logs/wav2lip_marlin_training',   # Directory where logs will be saved
+        name=args.checkpoint_path, # Name of the experiment (log folder name)
+    )
 
     # Setup parameters
     num_workers = args.num_workers if args.num_workers is not None else hparams.num_workers
@@ -99,10 +100,12 @@ def main():
     if args.is_weight is not None:
         hparams.set_hparam('identity_style_wt', args.is_weight)
         from Wav2LipMarlin.loss.identity_style_loss import IdentityStyleLoss
-        identity_style_loss = IdentityStyleLoss(identity_layers = [0, 2, 3, 4])
+        identity_style_loss = IdentityStyleLoss()
     else:
         hparams.set_hparam('identity_style_wt', 0.)
         identity_style_loss = None
+        
+    samples_path = os.path.join('./samples/', args.checkpoint_dir)
     
     # syncnet_T_m = 5
     # syncnet_mel_step_size_m = 16
@@ -122,7 +125,8 @@ def main():
     syncnet_pl_model.setup() # pre-load model
     # Model
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, 
-        wav2lip_type=wav2lip_type)
+        wav2lip_type=wav2lip_type, dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = True,
+        samples_dir=samples_path)
 
     # Checkpointing callbacks
     checkpoint_callbacks = []
