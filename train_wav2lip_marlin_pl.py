@@ -130,20 +130,30 @@ def main():
 
     # Checkpointing callbacks
     checkpoint_callbacks = []
+    # Best L1 checkpoint
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
-        filename='l1_tr_checkpoint_{epoch:02d}_{step:02d}',
+        filename='l1_vl_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
-        monitor='L1_loss_train_epoch',
+        monitor='L1_loss_val_epoch',
         mode='min'
     )
     checkpoint_callbacks.append(checkpoint_callback)
-    
+    # Best SyncLoss checkpoint
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
         filename='sl_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
         monitor='Sync_Loss_val_epoch',
+        mode='min'
+    )
+    checkpoint_callbacks.append(checkpoint_callback)
+    # Best Total_loss_val checkpoint
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
+        filename='total_best_checkpoint_{epoch:02d}_{step:02d}',
+        save_top_k=10,
+        monitor='Total_loss_val',
         mode='min'
     )
     checkpoint_callbacks.append(checkpoint_callback)
