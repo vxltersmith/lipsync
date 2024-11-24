@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
+    parser.add_argument('--manifest_root', help='Path to manufests directory, must contain tran and val .txt files', default='filelists', type=str)
     parser.add_argument('--wav2lip_type', 
         help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
         default="marlin", type=str)
@@ -109,8 +110,8 @@ def main():
     
     # syncnet_T_m = 5
     # syncnet_mel_step_size_m = 16
-    train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size)
-    test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size)
+    train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+    test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
