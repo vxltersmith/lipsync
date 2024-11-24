@@ -3,7 +3,7 @@ import torch
 
 from Wav2LipPLModel import Wav2LipPLModel
 from Wav2LipMarlin.hparams import hparams
-from overlay_video_syncnet import save_wav, combine_video_audio_ffmpeg
+from overlay_video_syncnet import save_wav, combine_video_audio_ffmpeg, remove_temp_files
 import Wav2LipMarlin.face_detection as face_detection
 
 from Wav2LipMarlin.utils import save_batch_gifs
@@ -156,8 +156,12 @@ def main():
         wav2lip_type = 'marlin'
         hparams.img_size = 224
         
+    dropout=0.05
+    spectral_scale=True
+    mean_context=False
+        
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, None, args.checkpoint_path, 
-        wav2lip_type=wav2lip_type, infer_only=True, dropout=0.0, spectral_scale=False, mean_context=True)
+        wav2lip_type=wav2lip_type, infer_only=True, dropout=dropout, spectral_scale=spectral_scale, mean_context=mean_context)
     
     model.setup()
     model.eval()
@@ -213,10 +217,12 @@ def main():
     
     print('Saving to: ' + target_video_path)
     
-    save_video(chunk_outputs, target_video_path, fps)
+    temp_video_path = "tmp.mp4"
+    save_video(chunk_outputs, temp_video_path, fps)
     wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
     temp_audio_path = save_wav(wav, hparams.sample_rate)
-    combine_video_audio_ffmpeg(target_video_path,  temp_audio_path, target_video_path)
+    combine_video_audio_ffmpeg(temp_video_path,  temp_audio_path, target_video_path)
+    remove_temp_files(temp_video_path, temp_audio_path)
     return
     
     

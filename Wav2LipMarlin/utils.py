@@ -114,7 +114,7 @@ def save_sample_gifs(x, g, gt, global_step, checkpoint_dir, fps=25, gif_filename
         
         print(f"GIF saved for batch {batch_idx} at {gif_path}")       
 
-def save_batch_gifs(g, global_step, checkpoint_dir, fps=25, gif_filename_prefix='sample_gif'):
+def save_batch_gifs(g, global_step, checkpoint_dir, fps=25, gif_filename_prefix='sample_gif', raw=True):
     """
     Save each batch element as a separate GIF instead of individual image files.
     
@@ -128,7 +128,8 @@ def save_batch_gifs(g, global_step, checkpoint_dir, fps=25, gif_filename_prefix=
         gif_filename_prefix (str): Prefix for the GIF file name.
     """
     # Convert tensors to numpy arrays and rearrange dimensions
-    g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+    if raw:
+        g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
 
     # Concatenate references, inputs, generated, and ground truth along width
     refs, inps = g[..., 3:], g[..., :3]

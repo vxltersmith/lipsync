@@ -15,7 +15,8 @@ def _load(checkpoint_path, device):
 class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
             wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1, infer_only = False,
-            dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False):
+            dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False, 
+            resize_outputs = False):
         super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -46,6 +47,8 @@ class Wav2LipPLModel(LightningModule):
         
         self.identity_style_loss_fn = None
         self.loaded = False
+        
+        self.resize_outputs = resize_outputs
         
     def setup(self, stage=None):
         if self.loaded: return
@@ -264,10 +267,11 @@ class Wav2LipPLModel(LightningModule):
         with torch.no_grad():
             g = self.model(indiv_mels, x)
         
-        batch_size, C, T, H, W = g.shape #[ B, C, T, H, W]
-        g = g.permute(0, 2, 1, 3, 4).contiguous()  # [batch_size, T, C, H, W]
-        g = F.interpolate(g.view(-1, C, H, W), size=x.shape[3:], mode='bilinear', align_corners=False)
-        g = g.view(batch_size, T, C, *x.shape[3:]).permute(0, 2, 1, 3, 4)  # [batch_size, C, T, new_H, new_W]
+        if self.resize_outputs:
+            batch_size, C, T, H, W = g.shape #[ B, C, T, H, W]
+            g = g.permute(0, 2, 1, 3, 4).contiguous()  # [batch_size, T, C, H, W]
+            g = F.interpolate(g.view(-1, C, H, W), size=x.shape[3:], mode='bilinear', align_corners=False)
+            g = g.view(batch_size, T, C, *x.shape[3:]).permute(0, 2, 1, 3, 4)  # [batch_size, C, T, new_H, new_W]
         
         return g
 

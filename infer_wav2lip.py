@@ -8,8 +8,10 @@ import os
 import torch
 import Wav2LipMarlin.face_detection as face_detection
 import Wav2LipMarlin.datasets.audio as audio
-from Wav2LipMarlin.models import Wav2Lip
+from Wav2LipMarlin.models.wav2lip import Wav2Lip
 import platform
+from Wav2LipMarlin.hparams import hparams
+from Wav2LipMarlin.utils import save_batch_gifs
 
 
 def get_smoothened_boxes(boxes, T):
@@ -181,7 +183,7 @@ def main(args):
 		audio_path = tmp_path
 
 	wav = audio.load_wav(audio_path, 16000)
-	mel = audio.melspectrogram(wav)
+	mel = audio.melspectrogram(wav, hp=hparams)
 	print(mel.shape)
 
 	if np.isnan(mel.reshape(-1)).sum() > 0:
@@ -211,7 +213,10 @@ def main(args):
 			model = load_model(args.checkpoint_path)
 			print ("Model loaded")
 
-			frame_h, frame_w = full_frames[0].shape[:-1]
+			if not args.pred_only:
+				frame_h, frame_w = full_frames[0].shape[:-1]
+			else: 
+				frame_h = frame_w = args.img_size 
 			out = cv2.VideoWriter(os.path.join(args.temp_dir, 'result.avi'), 
 									cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
@@ -222,12 +227,18 @@ def main(args):
 			pred = model(mel_batch, img_batch)
 
 		pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
+  
+		# (B, T, H, W, C)
+		save_batch_gifs(np.expand_dims(pred, 0).astype(np.uint8), i, './output_wav2lip_original', fps, 'generated', raw=False)
 		
 		for p, f, c in zip(pred, frames, coords):
-			y1, y2, x1, x2 = c
-			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
-
-			f[y1:y2, x1:x2] = p
+			p = p.astype(np.uint8)
+			if not args.pred_only:
+				y1, y2, x1, x2 = c
+				p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+				f[y1:y2, x1:x2] = p
+			else:
+				f = p
 			out.write(f)
 
 	out.release()
@@ -237,12 +248,13 @@ def main(args):
 
 class InferConfig:
     #face = './test_videos/_2g7CTRkaxc_0/_2g7CTRkaxc_0.mp4'
-    face = './test_videos/video_2024-10-08_23-53-17.mp4'
-    checkpoint_path = './Wav2Lip/checkpoints/wav2lip.pth'
-    #checkpoint_path = './Wav2Lip/checkpoints/wav2lip_gan.pth'
-    audio = './test_videos/xtts_male.wav'
-    outfile = 'result_voice.mp4'
-    outdir = './results/'
+    face = './source.mp4'
+    checkpoint_path = './checkpoints/Wav2Lip/wav2lip.pth'
+    #checkpoint_path = './checkpoints/Wav2Lip/wav2lip_gan.pth'
+    audio = './source.mp4'
+    outfile = './wav2lip_main_restore_origres.mp4'
+    #outfile = './wav2lip_gan_main_restore_origres.mp4'
+    outdir = './wav2lip_results/'
     resize_factor = 1
     rotate = False
     crop = (0, -1, 0, -1)
@@ -256,9 +268,10 @@ class InferConfig:
     device = 'cpu'
     mel_step_size = 16
     temp_dir = './temp/'
+    pred_only = True
 
 if __name__ == '__main__':
-    device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('Using {} for inference.'.format(device))
     args = InferConfig()
     args.device = device
