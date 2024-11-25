@@ -5,12 +5,13 @@ from Wav2LipPLModel import Wav2LipPLModel
 from Wav2LipMarlin.hparams import hparams
 from overlay_video_syncnet import save_wav, combine_video_audio_ffmpeg, remove_temp_files
 import Wav2LipMarlin.face_detection as face_detection
-
+from infer_wav2lip import get_smoothened_boxes
 from Wav2LipMarlin.utils import save_batch_gifs
 import numpy as np
 import cv2
 
 def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
+    print('Read audio and slice mels...')
     import Wav2LipMarlin.datasets.audio as audio
     wav = audio.load_wav(audio_path, 16000)
     mel = audio.melspectrogram(wav, config)
@@ -24,9 +25,11 @@ def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
     i = 0
     while 1:
         start_idx = int(i * mel_idx_multiplier)
-        
         if start_idx + mel_step_size > len(mel[0]):
-            # mel_chunks.append(mel[:, len(mel[0]) - mel_step_size:])
+            last_chunk = mel[:, start_idx:-1]
+            full_last_chunk = np.zeros((mel.shape[0], mel_step_size))
+            full_last_chunk[:,:last_chunk.shape[-1]] = last_chunk
+            mel_chunks.append(full_last_chunk)
             break
         mel_chunks.append(mel[:, start_idx : start_idx + mel_step_size])
         i += 1
@@ -37,7 +40,7 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
         target_size = 224):
     face_detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
         flip_input=False, device=device)
-    print('Detecting and  cropping faces on video frames...')
+    print('Detecting and cropping faces on video frames...')
 
     batch_size = face_det_batch_size
     n_frames = len(video_frames)
@@ -47,10 +50,12 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
     cropped_video_frames = []
     for bacth_idx, fb in enumerate(batches):
         preds = face_detector.get_detections_for_batch(np.asarray(fb))
+        preds = get_smoothened_boxes(preds, T=batch_size)
         for element_idx, bbox in enumerate(preds):
             i += 1
             if bbox is None:
                 continue
+            bbox = bbox.astype(np.int32)
             x1, y1, x2, y2 = bbox
             frame = fb[element_idx][y1:y2, x1:x2]
             cropped_video_frames.append(frame)
@@ -219,7 +224,7 @@ def main():
     
     temp_video_path = "tmp.mp4"
     save_video(chunk_outputs, temp_video_path, fps)
-    wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
+    #wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
     temp_audio_path = save_wav(wav, hparams.sample_rate)
     combine_video_audio_ffmpeg(temp_video_path,  temp_audio_path, target_video_path)
     remove_temp_files(temp_video_path, temp_audio_path)
