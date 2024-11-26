@@ -39,7 +39,7 @@
             // replace audio in video
             //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_reference_all_losses_v0/sl_checkpoint_epoch=58_step=169035.ckpt"] 
             //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_train_v0/l1_tr_checkpoint_epoch=07_step=22920.ckpt"],
-            "args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--target_video_path", "./clean_retrain_restore.mp4",  "--checkpoint_path", "./checkpoints/wav2lip_marlin/clean_retrain_lrsmain_l1_id_sync_specnorm_drop/l1_best_checkpoint_epoch=56_step=163305.ckpt"]
+            "args": ["--source_video_path", "./source.mp4", "--audio_path", "./source.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/clean_retrain_lrsmain_l1_id_sync_specnorm_drop/l1_best_checkpoint_epoch=79_step=229200.ckpt"]
         }
     ]
 }

@@ -22,6 +22,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
     parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True)
+    parser.add_argument("--val_data_root", help="Root folder of the preprocessed LRS2 dataset and its validation subset", default=None, type=str)
     parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory, must be a name, will be a subfolder of ./checkpoints/wav2lip_marlin', required=True, type=str)
     parser.add_argument('--syncnet_checkpoint_path', help='pre-trained LipSync expert checkpoint; required for training', required=True, type=str)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
@@ -30,6 +31,7 @@ def main():
     parser.add_argument('--eval_every', help='Eval every N epochs', default=None, type=int)
     parser.add_argument('--num_workers', help='Device ids', default=None, type=int)
     parser.add_argument('--sync_weight', help='Sync loss weight', default=None, type=float)
+    parser.add_argument('--lr', help='Learning rate', default=None, type=float)
     parser.add_argument('--is_weight', help='Identity-Style loss weight', default=None, type=float)
     parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
@@ -45,7 +47,7 @@ def main():
     # Create a TensorBoard logger
     logger = TensorBoardLogger(
         save_dir='./logs/lightning_logs/wav2lip_marlin_training',   # Directory where logs will be saved
-        name=args.checkpoint_path, # Name of the experiment (log folder name)
+        name=args.checkpoint_dir, # Name of the experiment (log folder name)
     )
 
     # Setup parameters
@@ -53,6 +55,9 @@ def main():
     batch_size = args.batch_size if args.batch_size is not None else hparams.batch_size
     eval_every = args.eval_every if args.eval_every is not None else 1
     eval_steps = 700 # from original Wav2Lip code
+    
+    if args.lr is not None:
+        hparams.initial_learning_rate = args.lr
     
     if args.seed != -1:
         seed_everything(args.seed, workers = True) # Seed everything including workers
@@ -106,12 +111,13 @@ def main():
         hparams.set_hparam('identity_style_wt', 0.)
         identity_style_loss = None
         
-    samples_path = os.path.join('./samples/', args.checkpoint_dir)
+    samples_path = os.path.join('./logs/samples/', args.checkpoint_dir)
     
     # syncnet_T_m = 5
     # syncnet_mel_step_size_m = 16
     train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
-    test_dataset = Wav2LipDataset(args.data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+    val_data_root = args.data_root if args.val_data_root is None else args.val_data_root
+    test_dataset = Wav2LipDataset(val_data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
@@ -136,7 +142,7 @@ def main():
         dirpath=os.path.join('./checkpoints/wav2lip_marlin/', args.checkpoint_dir),
         filename='l1_vl_checkpoint_{epoch:02d}_{step:02d}',
         save_top_k=10,
-        monitor='L1_loss_val_epoch',
+        monitor='L1_val',
         mode='min'
     )
     checkpoint_callbacks.append(checkpoint_callback)

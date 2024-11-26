@@ -1,5 +1,6 @@
 ffmpeg
 pytorch-lightning==2.3
+transformers
 opencv-python-headless==4.5.5.64
 torchvision
 marlin_pytorch==0.3.4

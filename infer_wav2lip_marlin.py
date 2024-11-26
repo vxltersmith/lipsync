@@ -111,7 +111,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Train Lip-Sync Expert Model')
     parser.add_argument("--source_video_path", help="Path to source video file to edit", required=True)
-    parser.add_argument("--target_video_path", help="Path to output file", default='./output.mp4', type=str)
+    parser.add_argument("--target_video_path", help="Path to output file", default=None, type=str)
     parser.add_argument("--audio_path", help="Path audio to replace original", required=True)
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', required=True, type=str)
     parser.add_argument('--wav2lip_type', 
@@ -121,8 +121,10 @@ def main():
     args = parser.parse_args()
     
     source_video_path = args.source_video_path
-    target_video_path = args.target_video_path
     audio_path = args.audio_path
+    video_edit_type = 'restore' if source_video_path == audio_path else 'replace'
+    auto_output_name = source_video_path.split('/')[-1].replace('.', '_')+'_'+ args.checkpoint_path.split('/')[-1].replace('.ckpt', '') + '_' + video_edit_type + '.mp4'
+    target_video_path = args.target_video_path if args.target_video_path is not None else auto_output_name
     
     debug_frames = True
     
