@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from Wav2LipMarlin.hparams import hparams
 from Wav2LipPLModel import Wav2LipPLModel
 from SyncNetPLModel import LipSyncExpertModel
-from Wav2LipMarlin.datasets.dataset import Wav2LipDataset
+from Wav2LipMarlin.datasets.dataset import Wav2LipDataset, Wav2LipPCMDataset
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from pytorch_lightning import seed_everything
@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
+    parser.add_argument('--audio_encoder_type', help='How to exctract audio features', default="default", type=str) # '16-mixed' for fp16
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
     parser.add_argument('--manifest_root', help='Path to manufests directory, must contain tran and val .txt files', default='filelists', type=str)
     parser.add_argument('--wav2lip_type', 
@@ -113,11 +114,16 @@ def main():
         
     samples_path = os.path.join('./logs/samples/', args.checkpoint_dir)
     
-    # syncnet_T_m = 5
-    # syncnet_mel_step_size_m = 16
-    train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
     val_data_root = args.data_root if args.val_data_root is None else args.val_data_root
-    test_dataset = Wav2LipDataset(val_data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+    audio_encoder_type = args.audio_encoder_type
+    if audio_encoder_type == 'default':
+        # syncnet_T_m = 5
+        # syncnet_mel_step_size_m = 16
+        train_dataset = Wav2LipDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+        test_dataset = Wav2LipDataset(val_data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+    else:
+        train_dataset = Wav2LipPCMDataset(args.data_root, 'train', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
+        test_dataset = Wav2LipPCMDataset(val_data_root, 'val', hparams, syncnet_T_m, syncnet_mel_step_size, manifest_root=args.manifest_root)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                    num_workers=num_workers)
@@ -133,7 +139,7 @@ def main():
     # Model
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, 
         wav2lip_type=wav2lip_type, dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = True,
-        samples_dir=samples_path)
+        samples_dir=samples_path, audio_encoder_type = audio_encoder_type)
 
     # Checkpointing callbacks
     checkpoint_callbacks = []
