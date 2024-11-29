@@ -37,7 +37,7 @@ def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
     return mel, wav, mel_chunks
 
 def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0,0,0),
-        target_size = 224):
+        target_size = 224, final_face_resolution=96):
     face_detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
         flip_input=False, device=device)
     print('Detecting and cropping faces on video frames...')
@@ -47,7 +47,10 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
 
     batches = [video_frames[i:i + batch_size] for i in range(0, n_frames, batch_size)]
     i = -1
+    
     cropped_video_frames = []
+    resized_frames = []  # To store resized whole frames
+    face_positions = []  # To store positions of faces in the original frame
     for bacth_idx, fb in enumerate(batches):
         preds = face_detector.get_detections_for_batch(np.asarray(fb))
         preds = get_smoothened_boxes(preds, T=batch_size)
@@ -57,8 +60,40 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
                 continue
             bbox = bbox.astype(np.int32)
             x1, y1, x2, y2 = bbox
-            frame = fb[element_idx][y1:y2, x1:x2]
-            cropped_video_frames.append(frame)
+            
+            frame = fb[element_idx].copy()
+            frame_h, frame_w = frame.shape[:2]
+            cropped_frame = fb[element_idx][y1:y2, x1:x2].copy()
+            cropped_video_frames.append(cropped_frame)
+            #frame[y1:y2, x1:x2] = 125
+            
+            # Calculate scaling factor based on the face resolution
+            # Resize the full frame to maintain its aspect ratio
+            frame_aspect_ratio = frame_h / frame_w
+            if frame_aspect_ratio > 1:
+                # Taller frame
+                bbox_h = y2-y1             
+                new_height = int(final_face_resolution * frame_h / bbox_h)
+                new_width = int(new_height / frame_aspect_ratio)
+            else:
+                # Wider frame
+                bbox_w = x2-x1
+                new_width = int(final_face_resolution * frame_w / bbox_w)
+                new_height = int(new_width * frame_aspect_ratio)
+
+            resized_frame = cv2.resize(frame, (new_width, new_height))
+            resized_frames.append(resized_frame)
+
+            # Calculate scaled face bounding box for the resized frame
+            scale_x = new_width / frame_w
+            scale_y = new_height / frame_h
+            scaled_bbox = [
+                int(x1 * scale_x),
+                int(y1 * scale_y),
+                int(x2 * scale_x),
+                int(y2 * scale_y)
+            ]
+            face_positions.append(scaled_bbox)
             continue
         continue
     
@@ -68,13 +103,15 @@ def face_detect(video_frames, face_det_batch_size = 16, device='cuda', pads=(0,0
     cropped_video_frames = np.array(cropped_video_frames)
     cropped_video_frames = torch.tensor(cropped_video_frames).permute(0, 3, 1, 2)
     cropped_video_frames = cropped_video_frames / 255
-    return cropped_video_frames
+    return cropped_video_frames, face_positions, resized_frames
 
 def save_video(frames, video_path, fps=25):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     width, height = frames[0].shape[:2]
-    out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(video_path, fourcc, fps, (height, width))
     for frame in frames:
+        if frame.shape[:2] != (width, height):
+            frame = cv2.resize(frame, (height, width))
         frame = frame.astype(np.uint8)
         out.write(frame)
     out.release()
@@ -179,18 +216,26 @@ def main():
     hparams.set_hparam('fps', fps)
     
     video_frames = get_video_frames(video_path = source_video_path)
-    cropped_video_frames = face_detect(video_frames)
-    cropped_video_frames = cropped_video_frames.cuda()
+    cropped_video_frames, face_positions, resized_frames = face_detect(video_frames)
+    cropped_video_frames = cropped_video_frames.cpu()
     
     mel_full, wav, mel_chunks = get_mels(audio_path=audio_path, mel_step_size=syncnet_mel_step_size, fps = fps, config=hparams)
     mel_chunks = np.array(mel_chunks)
-    mel_chunks = torch.tensor(mel_chunks).float().cuda()  # Ensure mel_chunks are pre-transposed
+    mel_chunks = torch.tensor(mel_chunks).float().cpu()  # Ensure mel_chunks are pre-transposed
     #mel_chunks = mel_chunks / mel_chunks.abs().max()
 
     n_mels = 80
     
+    total_audio_chunks = mel_chunks.shape[0]
+    video_frames_num = cropped_video_frames.shape[0]
+    
+    sinthes_steps = total_audio_chunks/syncnet_T
+    if sinthes_steps > video_frames_num:
+        expand_num = int((total_audio_chunks/video_frames_num)+1)
+        cropped_video_frames = torch.cat([cropped_video_frames]*expand_num, dim=0)
+    
     chunk_outputs = []
-    for i in range(0, mel_chunks.shape[0] - syncnet_T_m + 1, syncnet_T_m):
+    for i in range(0, total_audio_chunks - syncnet_T_m + 1, syncnet_T_m):
         # Masked and reference frames
         masked_frames = cropped_video_frames[i:i+syncnet_T_m].clone()
         reference_frames = masked_frames.clone()  
@@ -222,14 +267,40 @@ def main():
             save_batch_gifs(g, i, './output', fps, 'generated')
         continue
     
-    print('Saving to: ' + target_video_path)
+    # Embedding faces back to original frames
+    smoothed_bboxes = []
+    previous_bbox = None
+
+    for i, bbox in enumerate(face_positions):
+        bbox = [int(_) for _ in bbox]
+        smoothed_bboxes.append(bbox)
+        
+    if sinthes_steps > video_frames_num:
+        smoothed_bboxes = smoothed_bboxes * expand_num
+        resized_frames = resized_frames * expand_num
+        
+    resized_frames_with_faces = []
+    for i, resized_frame in enumerate(resized_frames):
+        # Extract bounding box for embedding
+        x1, y1, x2, y2 = smoothed_bboxes[i]
+        if i > len(chunk_outputs) - 1:
+            break
+        resized_face = chunk_outputs[i]
+        bbox_w = int(x2-x1)
+        bbox_h = int(y2-y1)
+        resized_face = torch.nn.functional.interpolate(
+            torch.tensor(resized_face).permute(2, 0, 1).unsqueeze(0).float(), (bbox_h, bbox_w)).squeeze().permute(1, 2, 0).int()
+        resized_frame[y1:y2, x1:x2] = resized_face  # Embed the resized face back
+        resized_frames_with_faces.append(resized_frame)
     
+    print('Saving video...')
     temp_video_path = "tmp.mp4"
-    save_video(chunk_outputs, temp_video_path, fps)
+    save_video(resized_frames_with_faces, temp_video_path, fps)
     #wav = wav[:int((len(chunk_outputs)+1)/fps * hparams.sample_rate)]
     temp_audio_path = save_wav(wav, hparams.sample_rate)
     combine_video_audio_ffmpeg(temp_video_path,  temp_audio_path, target_video_path)
     remove_temp_files(temp_video_path, temp_audio_path)
+    print('Saved to: ' + target_video_path)
     return
     
     

@@ -22,7 +22,7 @@
             // train wav2lip args
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v3", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/debug_v3/sl_checkpoint_epoch=03_step=23004.ckpt"],
             //"args": ["--data_root", "/data/LRS2/main/", "--checkpoint_dir", "debug_identity_loss", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--sync_weight", "0.03", "--is_weight", "0.07", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_reference_all_losses_v0/sl_checkpoint_epoch=54_step=157575.ckpt"],
-            "args": ["--data_root", "/data/LRS2/main/", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--checkpoint_dir", "audio_embeddings_debug", "--batch_size", "16", "--is_weight", "0.07", "--audio_encoder_type", "wav2vec"],
+            //"args": ["--data_root", "/data/LRS2/main/", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "16", "--checkpoint_dir", "audio_embeddings_debug", "--batch_size", "16", "--is_weight", "0.07", "--audio_encoder_type", "wav2vec"],
             //"args": ["--data_root", "/data/CelebVHQ/", "--checkpoint_dir", "debug_v2", "--syncnet_checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth", "--batch_size", "2"],          
 
             // evaluate syncnet args
@@ -37,9 +37,9 @@
             //"args": ["--video_path", "/data/LRS2/mvlrs_v1/main/5892739798226746824/00002.mp4", "--checkpoint_path", "./checkpoints/Wav2Lip/lipsync_expert.pth"]
             
             // replace audio in video
-            //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_reference_all_losses_v0/sl_checkpoint_epoch=58_step=169035.ckpt"] 
+            //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./sample_audio_50sec_only_voice.mp3", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_reference_all_losses_v0/sl_checkpoint_epoch=58_step=169035.ckpt"] 
             //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_train_v0/l1_tr_checkpoint_epoch=07_step=22920.ckpt"],
-            //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./source.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/clean_retrain_lrsmain_l1_id_sync_specnorm_drop/l1_best_checkpoint_epoch=79_step=229200.ckpt"]
+            "args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/clean_retrain_lrsmain_l1_id_sync_specnorm_drop/l1_tr_checkpoint_epoch=100_step=289365.ckpt"]
         }
     ]
 }
