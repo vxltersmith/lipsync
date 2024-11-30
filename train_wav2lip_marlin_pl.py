@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
-    parser.add_argument('--audio_encoder_type', help='How to exctract audio features', default="default", type=str) # '16-mixed' for fp16
+    parser.add_argument('--audio_encoder_type', help='How to exctract audio features', default="default", type=str)
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
     parser.add_argument('--manifest_root', help='Path to manufests directory, must contain tran and val .txt files', default='filelists', type=str)
     parser.add_argument('--wav2lip_type', 

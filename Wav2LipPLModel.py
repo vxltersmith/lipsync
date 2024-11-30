@@ -14,7 +14,7 @@ def _load(checkpoint_path, device):
 
 class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
-            wav2lip_type='marlin', scheduler = False, sync_offset_frames = 1, infer_only = False,
+            wav2lip_type='marlin', scheduler = False, sync_offset_frames = 2, infer_only = False,
             dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False, 
             resize_outputs = False, audio_encoder_type = 'default'):
         super(Wav2LipPLModel, self).__init__()
