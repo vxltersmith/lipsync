@@ -28,6 +28,8 @@ def main():
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
     parser.add_argument('--devices', help='Device ids', default=1, type=int)
+    # deep_fusion
+    parser.add_argument('--deep_fusion', help='Use FiLM to merge wav2vec features in wav2lip decoder', default=True, type=bool)
     parser.add_argument('--eval_every', help='Eval every N epochs', default=None, type=int)
     parser.add_argument('--num_workers', help='Device ids', default=None, type=int)
     parser.add_argument('--sync_weight', help='Sync loss weight', default=None, type=float)
@@ -139,7 +141,7 @@ def main():
     # Model
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, 
         wav2lip_type=wav2lip_type, dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = True,
-        samples_dir=samples_path, audio_encoder_type = audio_encoder_type)
+        samples_dir=samples_path, audio_encoder_type = audio_encoder_type, deep_fusion = args.deep_fusion)
 
     # Checkpointing callbacks
     checkpoint_callbacks = []

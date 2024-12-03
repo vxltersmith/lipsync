@@ -16,7 +16,7 @@ class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
             wav2lip_type='marlin', scheduler = False, sync_offset_frames = 2, infer_only = False,
             dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False, 
-            resize_outputs = False, audio_encoder_type = 'default'):
+            resize_outputs = False, audio_encoder_type = 'default', deep_fusion = True):
         super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -37,7 +37,8 @@ class Wav2LipPLModel(LightningModule):
                
         if wav2lip_type == 'marlin':
             self.model = Wav2Lip_Marlin(dropout=dropout, spectral_scaling=spectral_scale, # Redesigned Wav2Lip model with MARLIN encoder
-                mean_context = mean_context, audio_encoder_type = audio_encoder_type)  
+                mean_context = mean_context, audio_encoder_type = audio_encoder_type, 
+                deep_fusion = deep_fusion)  
         elif wav2lip_type == 'original':
             self.model = Wav2Lip_Original()
         else:

@@ -131,7 +131,7 @@ class Wav2Lip_Marlin(nn.Module):
     def __init__(self, backbone = "marlin_vit_base_ytf", 
             marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt', 
             marlin_out_dim=768, external_pooler = True, dropout = 0.05, spectral_scaling = True, 
-            mean_context = False, audio_encoder_type = 'default'):
+            mean_context = False, audio_encoder_type = 'default', deep_fusion = True):
         super(Wav2Lip_Marlin, self).__init__()
         # Modified MARLIN encoder; changed from original
         self.face_encoder = MARLIN_Encoder_decorator(backbone, marlin_ckpt, dropout = dropout, mean_context = mean_context)
@@ -188,7 +188,8 @@ class Wav2Lip_Marlin(nn.Module):
 
         self.output_block = nn.Sequential(Conv2d(80, 32, kernel_size=3, stride=1, padding=1, dropout=0, spectral_scaling=spectral_scaling),
             nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0),
-            nn.Sigmoid()) 
+            nn.Sigmoid())
+        self.deep_fusion = deep_fusion
 
     def forward(self, audio_sequences, face_sequences):
         """
@@ -217,7 +218,7 @@ class Wav2Lip_Marlin(nn.Module):
         for f in self.face_decoder_blocks:
             x = f(x)
             
-            if not original: # FiLM fusion of audio embeddings
+            if not original and self.deep_fusion: # FiLM fusion of audio embeddings
                 gamma, betta = audio_embedding[-1].chunk(2, dim=1)
                 x = x * gamma + betta
                 audio_embedding.pop()
