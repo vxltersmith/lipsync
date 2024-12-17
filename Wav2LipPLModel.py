@@ -16,7 +16,7 @@ class Wav2LipPLModel(LightningModule):
     def __init__(self, hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, checkpoint_path=None, samples_dir='./samples',
             wav2lip_type='marlin', scheduler = False, sync_offset_frames = 2, infer_only = False,
             dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = False, 
-            resize_outputs = False, audio_encoder_type = 'default', deep_fusion = True):
+            resize_outputs = False, audio_encoder_type = 'default', deep_fusion = True, weight_decay=0):
         super(Wav2LipPLModel, self).__init__()
         self.config = hparams
         self.syncnet_T = syncnet_T
@@ -33,6 +33,7 @@ class Wav2LipPLModel(LightningModule):
         
         self.checkpoint = None
         self.load_optimizer = load_optimizer
+        self.weight_decay = weight_decay
         self.samples_dir = samples_dir
                
         if wav2lip_type == 'marlin':
@@ -295,7 +296,7 @@ class Wav2LipPLModel(LightningModule):
     def configure_optimizers(self):
         # Optimizer configuration
         optimizer = optim.Adam([p for p in self.model.parameters() if p.requires_grad],
-                               lr=self.config.initial_learning_rate)
+            lr=self.config.initial_learning_rate, weight_decay=self.weight_decay)
         
         def load_checkpoint(checkpoint, optimizer, reset_optimizer = False):
             if not reset_optimizer:

@@ -28,19 +28,24 @@ def main():
     parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
     parser.add_argument('--accelerator', help='Device type', default="gpu", type=str)
     parser.add_argument('--devices', help='Device ids', default=1, type=int)
-    # deep_fusion
-    parser.add_argument('--deep_fusion', help='Use FiLM to merge wav2vec features in wav2lip decoder', default=True, type=bool)
     parser.add_argument('--eval_every', help='Eval every N epochs', default=None, type=int)
     parser.add_argument('--num_workers', help='Device ids', default=None, type=int)
+    
     parser.add_argument('--sync_weight', help='Sync loss weight', default=None, type=float)
     parser.add_argument('--lr', help='Learning rate', default=None, type=float)
     parser.add_argument('--is_weight', help='Identity-Style loss weight', default=None, type=float)
     parser.add_argument('--batch_size', help='Batch size for training', default=None, type=int)
     parser.add_argument('--limit_train_batches', help='Loop training for some batches', default=None, type=int)
     parser.add_argument('--precision', help='Loop training for some batches', default="32", type=str) # '16-mixed' for fp16
-    parser.add_argument('--audio_encoder_type', help='How to exctract audio features', default="default", type=str)
+    
     parser.add_argument('--seed', help='Seed everything with provided value; -1 for a random seed', default=666, type=int)
     parser.add_argument('--manifest_root', help='Path to manufests directory, must contain tran and val .txt files', default='filelists', type=str)
+
+    parser.add_argument('--deep_fusion', help='Use FiLM to merge wav2vec features in wav2lip decoder', default=True, type=bool)
+    parser.add_argument('--mean_context', help='Whether to use global T-frames context only for every frame generation', default=False, type=bool) 
+    parser.add_argument('--audio_encoder_type', help='How to exctract audio features', default="default", type=str)
+    parser.add_argument('--weight_decay', help='weight_decay for optimizer', default=0., type=float)
+
     parser.add_argument('--wav2lip_type', 
         help='Combination of Wav2Lip and SyncExpert backends: original==fully original, marlin_full==both use MARLIN as video encoder; marlin==SyncNet original and Wav2Lip+MARLIN', 
         default="marlin", type=str)
@@ -139,9 +144,14 @@ def main():
             syncnet_type = syncnet_type)
     syncnet_pl_model.setup() # pre-load model
     # Model
+    dropout = 0.05
+    spectral_scale = True
+    mean_context = args.mean_context
+    load_optimizer = True
+    weight_decay = args.weight_decay
     model = Wav2LipPLModel(hparams, syncnet_T, syncnet_mel_step_size, syncnet_pl_model, args.checkpoint_path, 
-        wav2lip_type=wav2lip_type, dropout = 0.05, spectral_scale = True, mean_context = False, load_optimizer = True,
-        samples_dir=samples_path, audio_encoder_type = audio_encoder_type, deep_fusion = args.deep_fusion)
+        wav2lip_type=wav2lip_type, dropout = dropout, spectral_scale = spectral_scale, mean_context = mean_context, load_optimizer = load_optimizer,
+        samples_dir=samples_path, audio_encoder_type = audio_encoder_type, deep_fusion = args.deep_fusion, weight_decay=weight_decay)
 
     # Checkpointing callbacks
     checkpoint_callbacks = []
