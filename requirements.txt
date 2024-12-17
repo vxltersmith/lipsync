@@ -10,3 +10,4 @@ einops
 moviepy
 facenet-pytorch
 numpy==1.25.0
+git+https://github.com/xinntao/Real-ESRGAN.git

@@ -12,7 +12,7 @@ import cv2
 import tqdm
 import os
 
-
+from realesrgan_proxy import proxy_call_realesrgan
 
 
 def get_mels(audio_path: str, mel_step_size: int, fps: int, config):
@@ -428,7 +428,7 @@ def main(source_video_path, audio_path, target_video_path, audio_encoder_type, s
     combine_video_audio_ffmpeg(temp_video_path,  temp_audio_path, target_video_path)
     remove_temp_files(temp_video_path, temp_audio_path)
     print('Saved to: ' + target_video_path)
-    return
+    return target_video_path
     
     
 if __name__ == "__main__":
@@ -468,7 +468,16 @@ if __name__ == "__main__":
         'overlapping': True
     }
     
-    main(source_video_path, audio_path=audio_path, target_video_path=target_video_path, audio_encoder_type=audio_encoder_type, 
+    target_video_path = main(source_video_path, audio_path=audio_path, target_video_path=target_video_path, audio_encoder_type=audio_encoder_type, 
         start_at=start_at, output_dir=output_dir, wav2lip_type=wav2lip_type, checkpoint_path=checkpoint_path, gif_dir=gif_dir,
         model_args = model_args
     )
+    
+    proxy_call_realesrgan(
+        input_path=target_video_path,
+        output_path=os.path.join(output_dir, 'output_videos_hd'),
+        model_name='RealESRGAN_x2plus',
+        outscale=2,
+        face_enhance=True,
+    )
+    

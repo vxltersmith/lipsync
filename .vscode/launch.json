@@ -41,7 +41,7 @@
             //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/full_train_v0/l1_tr_checkpoint_epoch=07_step=22920.ckpt"],
             //"args": ["--source_video_path", "./source.mp4", "--audio_path", "./00026.mp4", "--checkpoint_path", "./checkpoints/wav2lip_marlin/clean_retrain_lrsmain_l1_id_sync_specnorm_drop/l1_tr_checkpoint_epoch=100_step=289365.ckpt"]
             //"args": ["--start_at", "83", "--source_video_path", "./sample_videos/tristan_trimmed.mp4", "--audio_path", "./sample_videos/putin.wav", "--audio_encoder_type", "wav2vec", "--checkpoint_path", "./checkpoints/wav2lip_marlin/audio_embeddings_debug/l1_vl_checkpoint_epoch=116_step=335205.ckpt"]
-            "args": ["--start_at", "0", "--source_video_path", "./sample_videos/tristan_trimmed.mp4", "--audio_path", "./sample_videos/putin.wav", "--audio_encoder_type", "wav2vec", "--checkpoint_path", "./checkpoints/wav2lip_marlin/audio_emb_lrsmain_l1_id_sync_spec_norm_drop/l1_vl_checkpoint_epoch=131_step=378180.ckpt"]
+            "args": ["--start_at", "0", "--source_video_path", "./sample_videos/tristan_trimmed.mp4", "--audio_path", "./sample_videos/sample_audio_10sec_only_voice.mp3", "--audio_encoder_type", "wav2vec", "--checkpoint_path", "./checkpoints/wav2lip_marlin/audio_emb_lrsmain_l1_id_sync_spec_norm_drop/l1_vl_checkpoint_epoch=116_step=335205.ckpt"]
         }
     ]
 }
