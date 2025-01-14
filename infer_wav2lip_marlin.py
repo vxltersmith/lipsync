@@ -245,6 +245,7 @@ def main(source_video_path, audio_path, target_video_path, audio_encoder_type, s
         mean_context=mean_context, audio_encoder_type = audio_encoder_type, deep_fusion = deep_fusion)
     
     model.setup()
+    torch.compile(model.model)
     model.eval()
     model.cuda()
 
@@ -319,7 +320,12 @@ def main(source_video_path, audio_path, target_video_path, audio_encoder_type, s
             additional_frames = cropped_video_frames[-end_diff:].clone()
             masked_frames = torch.cat([masked_frames, additional_frames], dim=0)
         
-        reference_frames = masked_frames.clone()  
+        #reference_frames =  cropped_video_frames[0:syncnet_T_m].clone()
+        #masked_frames = reference_frames.clone()
+        reference_frames = torch.flip(masked_frames.clone(), [0])
+        # T, C, H, W = masked_frames.shape
+        # random_frame = masked_frames[0,:, :,:].clone().unsqueeze(0)  # Shape (B, C, 1, H, W)
+        # reference_frames =  random_frame.expand(T, C, H, W)  # Expand to (T, C, H, W)
         masked_frames[:,:,masked_frames.shape[3]//2:,:] = 0.
 
         # Prepare input frames
@@ -465,7 +471,7 @@ if __name__ == "__main__":
         'mean_context': False,
         'resize_to_gen': True,
         'deep_fusion': True,
-        'overlapping': True
+        'overlapping': False
     }
     
     target_video_path = main(source_video_path, audio_path=audio_path, target_video_path=target_video_path, audio_encoder_type=audio_encoder_type, 

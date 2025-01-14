@@ -91,15 +91,16 @@ class InterpolationLayer(nn.Module):
     
 class MARLIN_Encoder_decorator(nn.Module):
     def __init__(self, 
-            backbone, 
-            marlin_ckpt, 
+            model_name, 
+            checkpoint_path = None, 
             seq_mean_pool = False,
             marlin_out_dims = 768, 
             dropout = 0.05,
             mean_context = False
         ):
         super(MARLIN_Encoder_decorator, self).__init__()
-        self.encoder = Marlin.from_file(backbone, marlin_ckpt).encoder
+        marlin_model = Marlin.from_file(model_name, checkpoint_path) if checkpoint_path is not None else Marlin.from_online(model_name)
+        self.encoder = marlin_model.encoder
         for p in self.encoder.parameters(): # Excluding syncnet weights from autograd
             p.requires_grad = False
         self.seq_mean_pool = seq_mean_pool
@@ -115,6 +116,12 @@ class MARLIN_Encoder_decorator(nn.Module):
             MarlinFeatureAdapter(marlin_out_dims*2, 32, InterpolationLayer(size=(48, 48), mode = 'bilinear'), dropout = dropout), # 32, 48, 48
             MarlinFeatureAdapter(marlin_out_dims*2, 16, InterpolationLayer(size=(96, 96), mode = 'bilinear'), dropout = dropout)  # 16, 96, 96
         ])
+    
+    def get_emb_for_loss(self, x):
+        encoder = self.encoder
+        x = encoder.patch_embedding(x)
+        x = encoder.pos_embedding(x)
+        return encoder.blocks[0](x)
         
     def extract_features_ae(self, x):
         encoder = self.encoder

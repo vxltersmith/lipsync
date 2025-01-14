@@ -128,15 +128,18 @@ class Wav2Lip(nn.Module):
 
 # Wav2Lip_Marlin
 class Wav2Lip_Marlin(nn.Module):
-    def __init__(self, backbone = "marlin_vit_base_ytf", 
-            marlin_ckpt ='./checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt', 
-            marlin_out_dim=768, external_pooler = True, dropout = 0.05, spectral_scaling = True, 
-            mean_context = False, audio_encoder_type = 'default', deep_fusion = True):
+    def __init__(self, model_name = "marlin_vit_base_ytf", 
+            checkpoint_path = None, 
+            dropout = 0.05, spectral_scaling = True, 
+            mean_context = False, audio_encoder_type = 'conv2d', deep_fusion = True,
+            T_steps=16, output_shape=96):
         super(Wav2Lip_Marlin, self).__init__()
+        self.T_steps = T_steps
+        self.output_shape = output_shape 
         # Modified MARLIN encoder; changed from original
-        self.face_encoder = MARLIN_Encoder_decorator(backbone, marlin_ckpt, dropout = dropout, mean_context = mean_context)
+        self.face_encoder = MARLIN_Encoder_decorator(model_name, checkpoint_path, dropout = dropout, mean_context = mean_context)
 
-        if audio_encoder_type == 'default':
+        if audio_encoder_type == 'conv2d':
             self.audio_encoder = nn.Sequential(
                 Conv2d(1, 32, kernel_size=3, stride=1, padding=1, dropout=0),
                 Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True, dropout=0),
@@ -197,14 +200,15 @@ class Wav2Lip_Marlin(nn.Module):
          face_sequences = (B, C, T, 224, 224) MARLIN input dims
         """
         B = audio_sequences.size(0)
-        original = self.audio_encoder_type == 'default'
+        original = self.audio_encoder_type == 'conv2d'
         if original:
             input_dim_size = len(face_sequences.size())
             audio_input_dim_size = len(audio_sequences.size())
             assert input_dim_size == audio_input_dim_size
             if input_dim_size > 4:
                 audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
-            # Extract audio features with shape [B, 512, 1, 1]
+        
+        # Extract audio features with shape [B, 512, 1, 1]
         audio_embedding = self.audio_encoder(audio_sequences)
         
         # Extract list of a video features from MARLIN-encoder
@@ -218,7 +222,7 @@ class Wav2Lip_Marlin(nn.Module):
         for f in self.face_decoder_blocks:
             x = f(x)
             
-            if not original and self.deep_fusion: # FiLM fusion of audio embeddings
+            if (not original) and self.deep_fusion: # FiLM fusion of audio embeddings
                 gamma, betta = audio_embedding[-1].chunk(2, dim=1)
                 x = x * gamma + betta
                 audio_embedding.pop()
@@ -231,13 +235,16 @@ class Wav2Lip_Marlin(nn.Module):
                 raise e
             
             feats.pop()
-
+            continue
+        
+        if x.shape[-1] != self.output_shape:
+            x = torch.nn.functional.interpolate(x, (self.output_shape, self.output_shape))
         x = self.output_block(x)
 
         if not original or input_dim_size > 4:
             # x_split = torch.split(x, B, dim=0) # [(B, C, H, W)]
             # outputs = torch.stack(x_split, dim=2) # (B, C, T, H, W)
-            x = x.reshape(B, -1, 3, 96, 96) # [B, T, C, H, W]
+            x = x.reshape(B, self.T_steps, 3, self.output_shape, self.output_shape) # [B, T, C, H, W]
             outputs = x.transpose(1, 2) #[ B, C, T, H, W]
         else:
             outputs = x

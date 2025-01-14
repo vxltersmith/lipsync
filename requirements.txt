@@ -1,8 +1,6 @@
 ffmpeg
 pytorch-lightning==2.3
-transformers
 opencv-python-headless==4.5.5.64
-torchvision
 marlin_pytorch==0.3.4
 opencv-python==4.5.5.64
 pillow
@@ -11,3 +9,7 @@ moviepy
 facenet-pytorch
 numpy==1.25.0
 git+https://github.com/xinntao/Real-ESRGAN.git
+transformers
+flash-attn==2.5.8
+torchaudio
+torchvision

@@ -8,7 +8,7 @@ from transformers import Wav2Vec2Model
 
 class Wav2Vec2FeatureAdapter(nn.Module):
     def __init__(self, model_name = 'facebook/wav2vec2-large-xlsr-53', hidden_size=1024, 
-            select_from_layers = [3, 5, 6, 9, 12, 15, 18, 21], T_v=16):
+            select_from_layers = [3, 5, 6, 9, 12, 15, 18, 21], temporal_window_frames=16):
         """
             This module extracts features from PCM-encoded audio sequence and prepares it for U-Net fusion
             Shape sequence of original Wav2Lip2.0
@@ -35,7 +35,7 @@ class Wav2Vec2FeatureAdapter(nn.Module):
             nn.Conv1d(hidden_size, 64 * 2, kernel_size=3, stride=1, padding=1),
         ])
         self.select_from_layers = select_from_layers
-        self.T_v = T_v
+        self.temporal_window_frames = temporal_window_frames
         return
     
     def _init_weights(self, module):
@@ -58,9 +58,9 @@ class Wav2Vec2FeatureAdapter(nn.Module):
             feat = feat.transpose(2, 1)
             feat = self.conv_projectors[i](feat)
             feat = nn.functional.adaptive_avg_pool1d(feat, 16)
-            feat = feat.reshape(batch_size, -1, self.T_v, 1, 1)
+            feat = feat.reshape(batch_size, -1, self.temporal_window_frames, 1, 1)
             feat = feat.transpose(2, 1).contiguous()
-            feat = feat.reshape(self.T_v * batch_size, -1, 1, 1) # Back to [B*T, out_channels, H, W]
+            feat = feat.reshape(self.temporal_window_frames * batch_size, -1, 1, 1) # Back to [B*T, out_channels, H, W]
             adapted_audio_features.append(feat)
             filtered_audio_features.pop()
         

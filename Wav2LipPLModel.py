@@ -5,7 +5,8 @@ from pytorch_lightning import LightningModule
 from torch import nn, optim
 import torch
 import torch.nn.functional as F
-
+from Wav2LipMarlin.augmentation.video_augmentation import VideoAugmentationPipeline
+from Wav2LipMarlin.augmentation.audio_augmentation import AudioAugmentationPipeline
 
 
 def _load(checkpoint_path, device):
@@ -35,11 +36,15 @@ class Wav2LipPLModel(LightningModule):
         self.load_optimizer = load_optimizer
         self.weight_decay = weight_decay
         self.samples_dir = samples_dir
-               
+        
+        self.video_aug = None
+        self.audio_aug = None
         if wav2lip_type == 'marlin':
             self.model = Wav2Lip_Marlin(dropout=dropout, spectral_scaling=spectral_scale, # Redesigned Wav2Lip model with MARLIN encoder
                 mean_context = mean_context, audio_encoder_type = audio_encoder_type, 
-                deep_fusion = deep_fusion)  
+                deep_fusion = deep_fusion)
+            self.video_aug = VideoAugmentationPipeline()
+            self.audio_aug = AudioAugmentationPipeline()
         elif wav2lip_type == 'original':
             self.model = Wav2Lip_Original()
         else:
@@ -97,6 +102,8 @@ class Wav2LipPLModel(LightningModule):
         return loss
 
     def get_sync_loss(self, mel, g):
+        if self.syncnet_T is None: return 0
+        
         g = g[:, :, :, g.size(3)//2:]
         g = torch.cat([g[:, :, i] for i in range(self.syncnet_T)], dim=1)
         
@@ -196,11 +203,21 @@ class Wav2LipPLModel(LightningModule):
                 sync_loss = 0.
         else: # for PCM-encoded audio case
             x, audio_window, gt = batch
+            # augmentation
+            if self.video_aug is not None:
+                x = self.video_aug(x)
+            if self.audio_aug is not None:    
+                audio_window = self.audio_aug(audio_window)
             g = self.model(audio_window, x)
             #TODO figure out syncloss for PCM window
             sync_loss = 0.
 
         l1loss, g = self.get_mse_loss(g, gt)
+        
+        if not original:
+            sync_loss = self.recon_loss(self.model.face_encoder.get_emb_for_loss(gt), self.model.face_encoder.get_emb_for_loss(g))
+            syncnet_wt = self.config.identity_style_wt
+            
         if self.global_rank == 0 and self.global_step % self.config.checkpoint_interval == 0:
             save_sample_gifs(x, g, gt, self.global_step, self.samples_dir)
         
@@ -235,6 +252,11 @@ class Wav2LipPLModel(LightningModule):
         else: # for PCM-encoded audio case
             x, audio_window, gt = batch
             g = self.model(audio_window, x)
+            # augmentation
+            if self.video_aug is not None:
+                x = self.video_aug(x)
+            if self.audio_aug is not None:    
+                audio_window = self.audio_aug(audio_window)
             #TODO figure out syncloss for PCM window
             sync_loss = torch.zeros(1).to(x.device)
         

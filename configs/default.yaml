@@ -1,0 +1,49 @@
+experiment:
+  seed: 666
+  devices: 1
+  accelerator: "gpu"
+  precision: "32"
+  log_every_n_steps: 4
+  eval_every: 1
+  name: "wav2lip_refactor_v1"
+
+dataset:
+  dataset_type: "wav2lip_pcm" # ['wav2lip_pcm', 'wav2lip_mel']
+  data_root: "./data/lrs2"
+  val_data_root: null
+  eval_steps: 700
+  batch_size: 32
+  num_workers: 4
+
+training:
+  lr: 1e-4
+  # syncnet loss params
+  syncnet_wt: 0.0
+  syncnet_checkpoint_path: "./checkpoints/syncnet.pth"
+  # identity loss params
+  identity_style_wt: 0.0
+  identity_loss:
+    pretrained_name: "vggface2"
+    style_wt: 0.3
+    style_layers: [1, 2, 3]
+    identity_wt: 0.7
+    identity_layers: [0, 4, 5]
+  # marlin loss params
+  marlin_wt: 0.0
+  # optimizer config
+  load_optimizer: True
+  weight_decay: 0.0
+
+model:
+  wav2lip_type: "marlin" # wav2lip video encoder
+  video_encoder:
+    model_name: "marlin_vit_base_ytf"
+    checkpoint_path: './checkpoints/MARLIN/marlin_vit_base_ytf.encoder.pt'
+  checkpoint_path: "./checkpoints/wav2lip_marlin/wav2vec_film_augs_test_clean/total_best_checkpoint_epoch=258_step=742035.ckpt"
+  dropout: 0.05
+  spectral_scale: True
+  mean_context: False
+  deep_fusion: True
+  audio_encoder:
+    audio_encoder_type: "wav2vec" # ['conv2d, 'wav2vec]
+    model_name: 'facebook/wav2vec2-large-xlsr-53'
